@@ -1,0 +1,34 @@
+# ── Build artifacts ──────────────────────────────────────────────────────────
+build/
+*.so
+*.a
+*.o
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Large data files (generated / user-specific) ─────────────────────────────
+# Point clouds
+*.pcd
+
+# Geometry (voxel meshes, exported OBJ files)
+*.obj
+
+# Navmesh binaries — except the small sample committed for testing
+*.bin
+!test_navmesh.bin
+
+# ── IDE / session state ───────────────────────────────────────────────────────
+.claude/
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── Conda / pip ───────────────────────────────────────────────────────────────
+.conda/
+*.egg-info/
+dist/

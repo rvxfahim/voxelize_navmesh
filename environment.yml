@@ -1,0 +1,21 @@
+name: voxnav
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.10
+  # Pin NumPy <2 so every conda-forge binary (numexpr, bottleneck, sklearn,
+  # pandas) is compiled against the same ABI.  open3d.ml needs this.
+  - numpy>=1.24,<2
+  - scipy
+  - scikit-learn
+  - pandas
+  - numexpr
+  - bottleneck
+  - trimesh
+  - pip
+
+  - pip:
+    # open3d is pip-only; the 0.18/0.19 wheel requires numpy <2
+    - open3d
