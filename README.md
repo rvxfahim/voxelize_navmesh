@@ -2,6 +2,8 @@
 
 Point cloud → voxel mesh → Recast navmesh → Python path queries with Open3D visualisation.
 
+![Point cloud of a multi-storey parking structure viewed in Open3D](pointcloud.png)
+
 ---
 
 ## Quick start
@@ -193,10 +195,14 @@ python query_path.py scene.bin
 | `Shift + left-click` | Pick a point (first = START, second = END) |
 | `Q` / close window | Confirm selection and compute path |
 
-The viewer then opens a result window:
+![Picking start (blue) and end (yellow) points on the navmesh](point_selection.png)
+
+The viewer then opens a result window showing the computed path:
 - **Blue sphere** = start (snapped to nearest navmesh polygon)
 - **Yellow sphere** = end
 - **Red line + orange dots** = waypoints
+
+![Computed path shown as red line with orange waypoints on the navmesh wireframe](path_calculation.png)
 
 After closing the result window the terminal asks `Pick again? [y/N]` so you
 can keep trying routes without restarting.
