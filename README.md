@@ -10,7 +10,7 @@ Point cloud → voxel mesh → Recast navmesh → Python path queries with Open3
 
 ```bash
 # 1. Clone with submodule
-git clone --recurse-submodules https://github.com/<your-username>/voxelize_navmesh.git
+git clone --recurse-submodules https://github.com/rvxfahim/voxelize_navmesh.git
 cd voxelize_navmesh
 
 # 2. Set up Python environment (conda, avoids NumPy 1/2 conflicts)
