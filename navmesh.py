@@ -99,6 +99,52 @@ _lib.nm_find_straight_path.argtypes= [ctypes.c_void_p,
                                       ctypes.POINTER(ctypes.c_float),
                                       ctypes.c_int]
 
+
+class dtCrowdAgentParams(ctypes.Structure):
+    _fields_ = [
+        ("radius", ctypes.c_float),
+        ("height", ctypes.c_float),
+        ("maxAcceleration", ctypes.c_float),
+        ("maxSpeed", ctypes.c_float),
+        ("collisionQueryRange", ctypes.c_float),
+        ("pathOptimizationRange", ctypes.c_float),
+        ("separationWeight", ctypes.c_float),
+        ("updateFlags", ctypes.c_ubyte),
+        ("obstacleAvoidanceType", ctypes.c_ubyte),
+        ("queryFilterType", ctypes.c_ubyte),
+        ("userData", ctypes.c_void_p),
+    ]
+
+_lib.nm_crowd_create.restype = ctypes.c_void_p
+_lib.nm_crowd_create.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_float]
+
+_lib.nm_crowd_destroy.restype = None
+_lib.nm_crowd_destroy.argtypes = [ctypes.c_void_p]
+
+_lib.nm_crowd_add_agent.restype = ctypes.c_int
+_lib.nm_crowd_add_agent.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_float), ctypes.POINTER(dtCrowdAgentParams)]
+
+_lib.nm_crowd_remove_agent.restype = None
+_lib.nm_crowd_remove_agent.argtypes = [ctypes.c_void_p, ctypes.c_int]
+
+_lib.nm_crowd_request_move_target.restype = ctypes.c_bool
+_lib.nm_crowd_request_move_target.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_uint32, ctypes.POINTER(ctypes.c_float)]
+
+_lib.nm_crowd_update.restype = None
+_lib.nm_crowd_update.argtypes = [ctypes.c_void_p, ctypes.c_float]
+
+_lib.nm_crowd_get_agent_pos.restype = ctypes.c_bool
+_lib.nm_crowd_get_agent_pos.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_float), ctypes.POINTER(ctypes.c_float)]
+
+_lib.nm_crowd_request_move_velocity.restype = ctypes.c_bool
+_lib.nm_crowd_request_move_velocity.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
+
+_lib.nm_crowd_teleport_agent.restype = ctypes.c_bool
+_lib.nm_crowd_teleport_agent.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
+
+_lib.nm_crowd_force_agent_pos.restype = None
+_lib.nm_crowd_force_agent_pos.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -368,3 +414,89 @@ class NavMeshQuery:
         pts_yup = np.frombuffer(path_buf, dtype=np.float32)[:npts * 3] \
                     .reshape(-1, 3).copy()
         return _to_zup(pts_yup).astype(np.float32)
+
+# ---------------------------------------------------------------------------
+# Crowd
+# ---------------------------------------------------------------------------
+class Crowd:
+    def __init__(self, navmesh: NavMesh, max_agents: int = 100, max_agent_radius: float = 2.0):
+        self._nm = navmesh
+        self._handle = _lib.nm_crowd_create(ctypes.c_void_p(navmesh._raw_handle()), max_agents, max_agent_radius)
+        if not self._handle:
+            raise RuntimeError("Failed to create Crowd")
+
+    def close(self):
+        if self._handle:
+            _lib.nm_crowd_destroy(ctypes.c_void_p(self._handle))
+            self._handle = None
+
+    def __del__(self):
+        self.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def _to_c3(self, pt_zup):
+        arr = np.asarray(pt_zup, dtype=np.float32).reshape(1, 3)
+        yup = _to_yup(arr)[0]
+        v = (ctypes.c_float * 3)(float(yup[0]), float(yup[1]), float(yup[2]))
+        return v
+
+    def add_agent(self, pos_zup, radius=0.3, height=2.0, maxAcceleration=8.0, maxSpeed=3.5, collisionQueryRange=12.0):
+        pos_c = self._to_c3(pos_zup)
+        params = dtCrowdAgentParams()
+        params.radius = float(radius)
+        params.height = float(height)
+        params.maxAcceleration = float(maxAcceleration)
+        params.maxSpeed = float(maxSpeed)
+        params.collisionQueryRange = float(collisionQueryRange)
+        params.pathOptimizationRange = float(radius * 30.0)
+        params.separationWeight = 2.0
+        # DT_CROWD_ANTICIPATE_TURNS | DT_CROWD_OPTIMIZE_VIS | DT_CROWD_OPTIMIZE_TOPO | DT_CROWD_OBSTACLE_AVOIDANCE
+        params.updateFlags = 1 | 2 | 4 | 8
+        params.obstacleAvoidanceType = 0
+        params.queryFilterType = 0
+        params.userData = None
+
+        idx = _lib.nm_crowd_add_agent(ctypes.c_void_p(self._handle), pos_c, ctypes.byref(params))
+        if idx < 0:
+            raise RuntimeError("Failed to add agent to crowd (pool full?)")
+        return idx
+
+    def remove_agent(self, idx: int):
+        _lib.nm_crowd_remove_agent(ctypes.c_void_p(self._handle), idx)
+
+    def request_move_target(self, idx: int, pos_zup, navquery: NavMeshQuery):
+        # We need the poly_ref for the target
+        poly_ref, snp = navquery.find_nearest_poly(pos_zup)
+        if poly_ref == 0:
+            return False
+        pos_c = self._to_c3(snp)
+        return _lib.nm_crowd_request_move_target(ctypes.c_void_p(self._handle), idx, poly_ref, pos_c)
+
+    def request_move_velocity(self, idx: int, vel_zup):
+        vel_c = self._to_c3(vel_zup)
+        return _lib.nm_crowd_request_move_velocity(ctypes.c_void_p(self._handle), idx, vel_c)
+
+    def force_agent_pos(self, idx: int, pos_zup):
+        pos_c = self._to_c3(pos_zup)
+        _lib.nm_crowd_force_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c)
+
+    def teleport_agent(self, idx: int, pos_zup):
+        pos_c = self._to_c3(pos_zup)
+        return bool(_lib.nm_crowd_teleport_agent(ctypes.c_void_p(self._handle), idx, pos_c))
+
+    def get_agent_pos(self, idx: int):
+        pos_c = (ctypes.c_float * 3)()
+        vel_c = (ctypes.c_float * 3)()
+        if _lib.nm_crowd_get_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c, vel_c):
+            pos_yup = np.array(list(pos_c), dtype=np.float32).reshape(1, 3)
+            vel_yup = np.array(list(vel_c), dtype=np.float32).reshape(1, 3)
+            return _to_zup(pos_yup)[0], _to_zup(vel_yup)[0]
+        return None, None
+
+    def update(self, dt: float):
+        _lib.nm_crowd_update(ctypes.c_void_p(self._handle), ctypes.c_float(dt))

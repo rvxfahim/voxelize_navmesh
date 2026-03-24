@@ -13,10 +13,16 @@ add_executable(recast_cli recast_cli.cpp)
 target_include_directories(recast_cli PRIVATE
     ${RECAST_DIR}/Recast/Include
     ${RECAST_DIR}/Detour/Include
+    ${RECAST_DIR}/DetourCrowd/Include
+    ${RECAST_DIR}/DetourCrowd/Include
+    ${RECAST_DIR}/DetourCrowd/Include
 )
 
 target_link_libraries(recast_cli PRIVATE
     ${RECAST_BUILD}/Recast/libRecast.a
+    ${RECAST_BUILD}/DetourCrowd/libDetourCrowd.a
+    ${RECAST_BUILD}/DetourCrowd/libDetourCrowd.a
+    ${RECAST_BUILD}/DetourCrowd/libDetourCrowd.a
     ${RECAST_BUILD}/Detour/libDetour.a
 )
 
@@ -25,9 +31,15 @@ add_library(navmesh_bridge SHARED navmesh_bridge.cpp)
 
 target_include_directories(navmesh_bridge PRIVATE
     ${RECAST_DIR}/Detour/Include
+    ${RECAST_DIR}/DetourCrowd/Include
+    ${RECAST_DIR}/DetourCrowd/Include
+    ${RECAST_DIR}/DetourCrowd/Include
 )
 
 target_link_libraries(navmesh_bridge PRIVATE
+    ${RECAST_BUILD}/DetourCrowd/libDetourCrowd.a
+    ${RECAST_BUILD}/DetourCrowd/libDetourCrowd.a
+    ${RECAST_BUILD}/DetourCrowd/libDetourCrowd.a
     ${RECAST_BUILD}/Detour/libDetour.a
 )
 

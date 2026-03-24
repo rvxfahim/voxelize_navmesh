@@ -21,6 +21,7 @@
 #include "DetourNavMesh.h"
 #include "DetourNavMeshQuery.h"
 #include "DetourAlloc.h"
+#include "DetourCrowd.h"
 
 // ---------------------------------------------------------------------------
 // Binary format constants (must match RecastDemo/Source/Sample.cpp)
@@ -350,6 +351,119 @@ int nm_find_straight_path(void*        qhandle,
 
     if (dtStatusFailed(s)) return -1;
     return nstraight;
+}
+
+
+// ---- Crowd ----------------------------------------------------------------
+
+void* nm_crowd_create(void* navhandle, int max_agents, float max_agent_radius)
+{
+    if (!navhandle) return nullptr;
+    dtCrowd* crowd = dtAllocCrowd();
+    if (!crowd) return nullptr;
+    if (!crowd->init(max_agents, max_agent_radius, static_cast<dtNavMesh*>(navhandle))) {
+        dtFreeCrowd(crowd);
+        return nullptr;
+    }
+    return crowd;
+}
+
+void nm_crowd_destroy(void* crowdhandle)
+{
+    if (crowdhandle) dtFreeCrowd(static_cast<dtCrowd*>(crowdhandle));
+}
+
+int nm_crowd_add_agent(void* crowdhandle, const float* pos, const dtCrowdAgentParams* params)
+{
+    if (!crowdhandle) return -1;
+    return static_cast<dtCrowd*>(crowdhandle)->addAgent(pos, params);
+}
+
+void nm_crowd_remove_agent(void* crowdhandle, int idx)
+{
+    if (!crowdhandle) return;
+    static_cast<dtCrowd*>(crowdhandle)->removeAgent(idx);
+}
+
+bool nm_crowd_request_move_target(void* crowdhandle, int idx, uint32_t poly_ref, const float* pos)
+{
+    if (!crowdhandle) return false;
+    return static_cast<dtCrowd*>(crowdhandle)->requestMoveTarget(idx, (dtPolyRef)poly_ref, pos);
+}
+
+void nm_crowd_update(void* crowdhandle, float dt)
+{
+    if (!crowdhandle) return;
+    static_cast<dtCrowd*>(crowdhandle)->update(dt, nullptr);
+}
+
+bool nm_crowd_get_agent_pos(void* crowdhandle, int idx, float* pos_out, float* vel_out)
+{
+    if (!crowdhandle) return false;
+    const dtCrowdAgent* agent = static_cast<dtCrowd*>(crowdhandle)->getAgent(idx);
+    if (!agent || !agent->active) return false;
+    if (pos_out) { pos_out[0] = agent->npos[0]; pos_out[1] = agent->npos[1]; pos_out[2] = agent->npos[2]; }
+    if (vel_out) { vel_out[0] = agent->vel[0]; vel_out[1] = agent->vel[1]; vel_out[2] = agent->vel[2]; }
+    return true;
+}
+
+bool nm_crowd_request_move_velocity(void* crowdhandle, int idx, const float* vel)
+{
+    if (!crowdhandle) return false;
+    return static_cast<dtCrowd*>(crowdhandle)->requestMoveVelocity(idx, vel);
+}
+
+bool nm_crowd_teleport_agent(void* crowdhandle, int idx, const float* pos)
+{
+    if (!crowdhandle || !pos) return false;
+    dtCrowd* crowd = static_cast<dtCrowd*>(crowdhandle);
+    dtCrowdAgent* agent = crowd->getEditableAgent(idx);
+    if (!agent || !agent->active) return false;
+
+    dtPolyRef ref = 0;
+    float nearest[3] = { pos[0], pos[1], pos[2] };
+    const dtQueryFilter* filter = crowd->getFilter(agent->params.queryFilterType);
+    const float* extents = crowd->getQueryHalfExtents();
+    const dtNavMeshQuery* navquery_const = crowd->getNavMeshQuery();
+    dtNavMeshQuery* navquery = const_cast<dtNavMeshQuery*>(navquery_const);
+    if (navquery && filter && extents) {
+        const dtStatus s = navquery->findNearestPoly(pos, extents, filter, &ref, nearest);
+        if (dtStatusFailed(s)) {
+            ref = 0;
+            nearest[0] = pos[0];
+            nearest[1] = pos[1];
+            nearest[2] = pos[2];
+        }
+    }
+
+    // Keep internal crowd state coherent after teleport.
+    crowd->resetMoveTarget(idx);
+    agent->corridor.reset(ref, nearest);
+    agent->boundary.reset();
+    agent->partial = false;
+    agent->topologyOptTime = 0.0f;
+    agent->targetReplanTime = 0.0f;
+    agent->nneis = 0;
+    agent->desiredSpeed = 0.0f;
+
+    agent->npos[0] = nearest[0];
+    agent->npos[1] = nearest[1];
+    agent->npos[2] = nearest[2];
+    agent->dvel[0] = agent->dvel[1] = agent->dvel[2] = 0.0f;
+    agent->nvel[0] = agent->nvel[1] = agent->nvel[2] = 0.0f;
+    agent->vel[0] = agent->vel[1] = agent->vel[2] = 0.0f;
+    agent->state = ref ? DT_CROWDAGENT_STATE_WALKING : DT_CROWDAGENT_STATE_INVALID;
+    return ref != 0;
+}
+
+void nm_crowd_force_agent_pos(void* crowdhandle, int idx, const float* pos)
+{
+    if (!crowdhandle) return;
+    dtCrowdAgent* agent = static_cast<dtCrowd*>(crowdhandle)->getEditableAgent(idx);
+    if (!agent || !agent->active) return;
+    agent->npos[0] = pos[0];
+    agent->npos[1] = pos[1];
+    agent->npos[2] = pos[2];
 }
 
 } // extern "C"
