@@ -40,11 +40,13 @@ add_library(navmesh_bridge SHARED
 )
 
 target_include_directories(navmesh_bridge PRIVATE
+  ${RECAST_DIR}/Recast/Include
   ${RECAST_DIR}/Detour/Include
   ${RECAST_DIR}/DetourCrowd/Include
 )
 
-target_link_libraries(navmesh_bridge PRIVATE
+target_link_libraries(navmesh_bridge PUBLIC
+  Recast
   DetourCrowd
   Detour
   pthread
@@ -71,6 +73,7 @@ ament_python_install_package(voxnav)
 # Install the simulate_crowd.py script as an executable
 install(PROGRAMS
   ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/simulate_crowd.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/navmesh_baker.py
   DESTINATION bin
 )
 

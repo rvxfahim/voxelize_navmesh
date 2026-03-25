@@ -36,6 +36,20 @@ ros2 launch voxnav simulate_crowd.launch.py \
   navmesh_file:=/absolute/path/to/solo_navmesh.bin
 ```
 
+PyQt navmesh baker tool (project-based):
+
+```bash
+source install/setup.bash
+navmesh_baker
+```
+
+Or via ROS2 launch:
+
+```bash
+source install/setup.bash
+ros2 launch voxnav navmesh_baker.launch.py
+```
+
 Example with repo sample:
 
 ```bash
@@ -57,5 +71,6 @@ ros2 launch voxnav simulate_crowd.launch.py \
 ## Notes
 
 - `simulate_crowd.launch.py` executes installed `simulate_crowd.py`.
+- `navmesh_baker` opens a PyQt/Open3D authoring tool for baking `.bin` navmeshes from OBJ input.
 - `voxnav.navmesh` resolves `navmesh_bridge.so` from ROS2 install prefix paths.
 - Recast warnings may appear during build; they are non-fatal unless build exits with an error.

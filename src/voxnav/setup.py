@@ -15,7 +15,7 @@ setup(
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
         (os.path.join('share', package_name, 'config'), glob('config/*')),
     ],
-    install_requires=['setuptools'],
+    install_requires=['setuptools', 'numpy', 'open3d', 'PyQt5'],
     zip_safe=True,
     maintainer='nafis',
     maintainer_email='nafis@example.com',
@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'simulate_crowd = voxnav.simulate_crowd:main',
+            'navmesh_baker = voxnav.navmesh_baker_app:main',
         ],
     },
 )
