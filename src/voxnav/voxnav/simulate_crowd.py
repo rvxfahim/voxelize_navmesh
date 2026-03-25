@@ -1,10 +1,20 @@
 import time
 import argparse
+import os
+import sys
 import numpy as np
 import open3d as o3d
 import tkinter as tk
 
-from navmesh import NavMesh, NavMeshQuery, Crowd
+# Try to import from the voxnav package; if not available, add the local directory to path
+try:
+    from voxnav.navmesh import NavMesh, NavMeshQuery, Crowd
+except ImportError:
+    # Add package directory to path for local imports (when running from source)
+    _pkg_dir = os.path.dirname(os.path.abspath(__file__))
+    if _pkg_dir not in sys.path:
+        sys.path.insert(0, _pkg_dir)
+    from voxnav.navmesh import NavMesh, NavMeshQuery, Crowd
 
 # Globals to communicate between Tkinter and Open3D
 state = {

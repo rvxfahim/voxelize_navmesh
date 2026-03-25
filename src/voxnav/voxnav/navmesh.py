@@ -27,9 +27,24 @@ import numpy as np
 # Locate the shared library relative to this file
 # ---------------------------------------------------------------------------
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_LIB_SEARCH = [
+
+# ROS2 workspace paths - search in order of preference
+_lib_paths = []
+try:
+    from ament_index_python.packages import get_package_prefix
+    try:
+        pkg_prefix = get_package_prefix('voxnav')
+        _lib_paths.append(os.path.join(pkg_prefix, 'lib', 'navmesh_bridge.so'))
+        _lib_paths.append(os.path.join(pkg_prefix, 'lib', 'voxnav', 'navmesh_bridge.so'))
+    except Exception:
+        pass  # Not in a ROS2 workspace yet
+except ImportError:
+    pass  # ament_index_python not available
+
+_LIB_SEARCH = _lib_paths + [
     os.path.join(_HERE, "build", "navmesh_bridge.so"),
     os.path.join(_HERE, "navmesh_bridge.so"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(_HERE))), "lib", "navmesh_bridge.so"),
 ]
 
 def _load_lib():

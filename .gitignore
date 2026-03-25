@@ -32,3 +32,8 @@ __pycache__/
 .conda/
 *.egg-info/
 dist/
+
+
+# ── Logs and temporary files ─────────────────────────────────────────────────
+log/
+install/
