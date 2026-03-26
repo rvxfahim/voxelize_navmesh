@@ -41,8 +41,12 @@ class MainWindow(QMainWindow):
         self._baked = None
 
         self._mesh_path = QLineEdit()
-        self._mesh_path.setPlaceholderText("Path to OBJ mesh (Y-up)")
+        self._mesh_path.setPlaceholderText("Path to OBJ mesh")
         self._mesh_path.editingFinished.connect(self._on_mesh_edited)
+
+        self._z_up_check = QCheckBox("Input is Z-up")
+        self._z_up_check.setChecked(True)
+        self._z_up_check.toggled.connect(self._on_mesh_edited)
 
         form = QFormLayout()
         self._controls = {}
@@ -129,7 +133,12 @@ class MainWindow(QMainWindow):
         root = QWidget()
         lay = QVBoxLayout(root)
         lay.addWidget(QLabel("Input OBJ"))
-        lay.addWidget(self._mesh_path)
+        
+        path_lay = QHBoxLayout()
+        path_lay.addWidget(self._mesh_path)
+        path_lay.addWidget(self._z_up_check)
+        lay.addLayout(path_lay)
+        
         lay.addLayout(form)
         lay.addLayout(buttons)
         self.setCentralWidget(root)
@@ -268,8 +277,9 @@ class MainWindow(QMainWindow):
             if self._baked is not None:
                 self._baked.close()
             self._status.showMessage("Baking navmesh...")
-            self._baked = build_navmesh_from_obj(mesh, cfg)
-            verts, tris = self._baked.get_geometry()
+            is_z_up = self._z_up_check.isChecked()
+            self._baked = build_navmesh_from_obj(mesh, cfg, input_is_z_up=is_z_up)
+            verts, tris = self._baked.get_geometry(swap_yz=is_z_up)
             if self._ensure_viewer():
                 self._viewer.set_navmesh_wireframe(verts, tris)
                 self._apply_preview_settings()

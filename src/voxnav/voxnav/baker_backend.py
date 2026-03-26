@@ -28,7 +28,7 @@ class BakedNavmesh:
         if rc != 0:
             raise RuntimeError(f"Failed to save navmesh to '{path}'")
 
-    def get_geometry(self):
+    def get_geometry(self, swap_yz: bool = False):
         tile_count = int(self.lib.nm_tile_count(ctypes.c_void_p(self.handle)))
         all_verts = []
         all_tris = []
@@ -60,6 +60,8 @@ class BakedNavmesh:
             return np.zeros((0, 3), dtype=np.float32), np.zeros((0, 3), dtype=np.int32)
         verts = np.concatenate(all_verts, axis=0)
         tris = np.concatenate(all_tris, axis=0)
+        if swap_yz:
+            verts = to_zup(verts)
         return verts.astype(np.float32), tris.astype(np.int32)
 
 
@@ -86,12 +88,13 @@ def _to_c_settings(cfg: RecastBuildConfig):
     return s
 
 
-def build_navmesh_from_obj(obj_path: str, cfg: RecastBuildConfig) -> BakedNavmesh:
+def build_navmesh_from_obj(obj_path: str, cfg: RecastBuildConfig, input_is_z_up: bool = True) -> BakedNavmesh:
     c_settings = _to_c_settings(cfg)
     err = ctypes.create_string_buffer(1024)
     handle = _LIB.nm_build_solo_from_obj(
         obj_path.encode("utf-8"),
         ctypes.byref(c_settings),
+        1 if input_is_z_up else 0,
         err,
         len(err),
     )

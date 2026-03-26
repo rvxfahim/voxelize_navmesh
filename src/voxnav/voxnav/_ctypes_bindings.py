@@ -61,6 +61,7 @@ def bind_navmesh_symbols(lib: ctypes.CDLL) -> BoundNavmeshLib:
     lib.nm_build_solo_from_obj.argtypes = [
         ctypes.c_char_p,
         ctypes.POINTER(nmBuildSettings),
+        ctypes.c_int,
         ctypes.c_char_p,
         ctypes.c_int,
     ]

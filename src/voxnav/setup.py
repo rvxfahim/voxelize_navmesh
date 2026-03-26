@@ -25,6 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'simulate_crowd = voxnav.simulate_crowd:main',
+            'simulate_crowd_cosim = voxnav.simulate_crowd_cosim:main',
+            'fake_robot_pose = voxnav.fake_robot_pose:main',
             'navmesh_baker = voxnav.navmesh_baker_app:main',
         ],
     },

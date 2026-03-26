@@ -73,6 +73,8 @@ ament_python_install_package(voxnav)
 # Install the simulate_crowd.py script as an executable
 install(PROGRAMS
   ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/simulate_crowd.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/simulate_crowd_cosim.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/fake_robot_pose.py
   ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/navmesh_baker.py
   DESTINATION bin
 )

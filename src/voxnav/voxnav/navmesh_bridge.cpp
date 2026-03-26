@@ -80,7 +80,7 @@ static int parse_face_token(const std::string& token, int vertex_count) {
     return index;
 }
 
-static bool load_obj_mesh(const char* obj_path, ObjMesh& out_mesh, char* error_out, int error_out_len) {
+static bool load_obj_mesh(const char* obj_path, bool input_is_z_up, ObjMesh& out_mesh, char* error_out, int error_out_len) {
     std::ifstream in(obj_path);
     if (!in.is_open()) {
         set_error(error_out, error_out_len, "Could not open OBJ file.");
@@ -100,6 +100,9 @@ static bool load_obj_mesh(const char* obj_path, ObjMesh& out_mesh, char* error_o
             if (!(iss >> x >> y >> z)) {
                 continue;
             }
+            if (input_is_z_up) {
+                std::swap(y, z);
+            }
             out_mesh.verts.push_back(x);
             out_mesh.verts.push_back(y);
             out_mesh.verts.push_back(z);
@@ -118,6 +121,9 @@ static bool load_obj_mesh(const char* obj_path, ObjMesh& out_mesh, char* error_o
             }
             if (face.size() < 3) {
                 continue;
+            }
+            if (input_is_z_up) {
+                std::reverse(face.begin(), face.end());
             }
             for (size_t i = 2; i < face.size(); ++i) {
                 out_mesh.tris.push_back(face[0]);
@@ -284,6 +290,7 @@ int nm_save(void* handle, const char* path) {
 void* nm_build_solo_from_obj(
     const char* obj_path,
     const nmBuildSettings* settings,
+    int input_is_z_up,
     char* error_out,
     int error_out_len
 ) {
@@ -304,7 +311,7 @@ void* nm_build_solo_from_obj(
 
     fprintf(stderr, "[C++] Loading OBJ file: %s\n", obj_path);
     ObjMesh mesh_data;
-    if (!load_obj_mesh(obj_path, mesh_data, error_out, error_out_len)) {
+    if (!load_obj_mesh(obj_path, input_is_z_up != 0, mesh_data, error_out, error_out_len)) {
         fprintf(stderr, "[C++] ERROR: Failed to load OBJ mesh\n");
         return nullptr;
     }
