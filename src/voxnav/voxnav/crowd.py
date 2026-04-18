@@ -70,10 +70,20 @@ class Crowd:
         pos_c = self._to_c3(pos_zup)
         self._lib.nm_crowd_force_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c)
 
-    def sync_agent_pos(self, idx: int, pos_zup) -> bool:
-        """Snap agent to nearest navmesh poly and update corridor without resetting the move target."""
+    def sync_agent_pos(self, idx: int, pos_zup, snap_vextent: float | None = None) -> bool:
+        """Snap agent to nearest navmesh poly and update corridor without resetting the move target.
+
+        snap_vextent: vertical half-extent (Y-up metres) for the nearest-poly search.
+        Use a value smaller than half the floor separation to avoid cross-floor snapping
+        in multi-floor environments (e.g. 1.0 for ~3 m floor pitch). None = crowd default.
+        """
         pos_c = self._to_c3(pos_zup)
-        return bool(self._lib.nm_crowd_sync_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c))
+        if snap_vextent is not None:
+            ext_c = (ctypes.c_float * 3)(2.0, float(snap_vextent), 2.0)
+            ext_ptr = ctypes.cast(ext_c, ctypes.POINTER(ctypes.c_float))
+        else:
+            ext_ptr = ctypes.cast(None, ctypes.POINTER(ctypes.c_float))
+        return bool(self._lib.nm_crowd_sync_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c, ext_ptr))
 
     def teleport_agent(self, idx: int, pos_zup):
         pos_c = self._to_c3(pos_zup)

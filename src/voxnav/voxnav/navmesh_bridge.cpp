@@ -947,7 +947,9 @@ void nm_crowd_force_agent_pos(void* crowdhandle, int idx, const float* pos) {
 
 // Snap position to nearest navmesh poly and update the path corridor in-place.
 // Unlike force_agent_pos, this keeps the existing move target valid.
-bool nm_crowd_sync_agent_pos(void* crowdhandle, int idx, const float* pos) {
+// half_extents: optional custom search box (Y-up). Pass NULL to use crowd defaults.
+// For multi-floor environments, pass a tight vertical extent to avoid cross-floor snaps.
+bool nm_crowd_sync_agent_pos(void* crowdhandle, int idx, const float* pos, const float* half_extents) {
     if (!crowdhandle || !pos) return false;
     dtCrowd* crowd = static_cast<dtCrowd*>(crowdhandle);
     dtCrowdAgent* agent = crowd->getEditableAgent(idx);
@@ -956,7 +958,7 @@ bool nm_crowd_sync_agent_pos(void* crowdhandle, int idx, const float* pos) {
     float nearest[3] = {pos[0], pos[1], pos[2]};
     dtPolyRef ref = 0;
     const dtQueryFilter* filter = crowd->getFilter(agent->params.queryFilterType);
-    const float* extents = crowd->getQueryHalfExtents();
+    const float* extents = half_extents ? half_extents : crowd->getQueryHalfExtents();
     const dtNavMeshQuery* q_const = crowd->getNavMeshQuery();
     dtNavMeshQuery* navquery = const_cast<dtNavMeshQuery*>(q_const);
 

@@ -47,11 +47,18 @@ class CrowdCosimNode(Node):
         self.declare_parameter('max_angular_speed', 1.5)
         self.declare_parameter('update_rate', 30.0)
         self.declare_parameter('kp_angular', 2.0)
-        
+        # snap_vextent: vertical half-extent (metres, Y-up) for robot→navmesh snapping.
+        # Set to ~half the floor separation in multi-floor environments to avoid
+        # snapping to the wrong floor (e.g. 1.0 for a 3 m floor pitch).
+        # -1.0 means use the crowd's default extents.
+        self.declare_parameter('snap_vextent', -1.0)
+
         self.max_linear_speed = self.get_parameter('max_linear_speed').value
         self.max_angular_speed = self.get_parameter('max_angular_speed').value
         self.update_rate = self.get_parameter('update_rate').value
         self.kp_angular = self.get_parameter('kp_angular').value
+        _vext = self.get_parameter('snap_vextent').value
+        self.snap_vextent: float | None = _vext if _vext > 0 else None
         
         # Thread-safe state
         self.state_lock = threading.Lock()
@@ -144,7 +151,7 @@ class CrowdCosimNode(Node):
             
             # Update robot position from /robotPose — snap to mesh and update corridor
             if self.state["robot_pos"] is not None:
-                self.crowd.sync_agent_pos(self.robot_id, self.state["robot_pos"])
+                self.crowd.sync_agent_pos(self.robot_id, self.state["robot_pos"], self.snap_vextent)
 
             # Update obstacle position from GUI — teleport (static, no path to preserve)
             obs_pos = np.array([

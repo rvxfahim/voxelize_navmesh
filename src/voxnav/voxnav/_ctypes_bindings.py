@@ -155,6 +155,10 @@ def bind_navmesh_symbols(lib: ctypes.CDLL) -> BoundNavmeshLib:
     lib.nm_crowd_force_agent_pos.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
 
     lib.nm_crowd_sync_agent_pos.restype = ctypes.c_bool
-    lib.nm_crowd_sync_agent_pos.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(ctypes.c_float)]
+    lib.nm_crowd_sync_agent_pos.argtypes = [
+        ctypes.c_void_p, ctypes.c_int,
+        ctypes.POINTER(ctypes.c_float),   # pos
+        ctypes.POINTER(ctypes.c_float),   # half_extents (nullable)
+    ]
 
     return BoundNavmeshLib(lib=lib, dt_crowd_agent_params=dtCrowdAgentParams, build_settings_type=nmBuildSettings)
