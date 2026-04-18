@@ -945,4 +945,33 @@ void nm_crowd_force_agent_pos(void* crowdhandle, int idx, const float* pos) {
     agent->npos[2] = pos[2];
 }
 
+// Snap position to nearest navmesh poly and update the path corridor in-place.
+// Unlike force_agent_pos, this keeps the existing move target valid.
+bool nm_crowd_sync_agent_pos(void* crowdhandle, int idx, const float* pos) {
+    if (!crowdhandle || !pos) return false;
+    dtCrowd* crowd = static_cast<dtCrowd*>(crowdhandle);
+    dtCrowdAgent* agent = crowd->getEditableAgent(idx);
+    if (!agent || !agent->active) return false;
+
+    float nearest[3] = {pos[0], pos[1], pos[2]};
+    dtPolyRef ref = 0;
+    const dtQueryFilter* filter = crowd->getFilter(agent->params.queryFilterType);
+    const float* extents = crowd->getQueryHalfExtents();
+    const dtNavMeshQuery* q_const = crowd->getNavMeshQuery();
+    dtNavMeshQuery* navquery = const_cast<dtNavMeshQuery*>(q_const);
+
+    if (navquery && filter && extents) {
+        const dtStatus s = navquery->findNearestPoly(pos, extents, filter, &ref, nearest);
+        if (dtStatusFailed(s)) ref = 0;
+    }
+    if (!ref) return false;
+
+    agent->npos[0] = nearest[0];
+    agent->npos[1] = nearest[1];
+    agent->npos[2] = nearest[2];
+    agent->corridor.movePosition(nearest, navquery, filter);
+    agent->state = DT_CROWDAGENT_STATE_WALKING;
+    return true;
+}
+
 }  // extern "C"

@@ -142,17 +142,17 @@ class CrowdCosimNode(Node):
             if not self.state["run"]:
                 return
             
-            # Update robot position from /robotPose
+            # Update robot position from /robotPose — snap to mesh and update corridor
             if self.state["robot_pos"] is not None:
-                self.crowd.force_agent_pos(self.robot_id, self.state["robot_pos"])
-            
-            # Update obstacle position from GUI
+                self.crowd.sync_agent_pos(self.robot_id, self.state["robot_pos"])
+
+            # Update obstacle position from GUI — teleport (static, no path to preserve)
             obs_pos = np.array([
                 self.state["obs_x"],
                 self.state["obs_y"],
                 self.state["obs_z"]
             ])
-            self.crowd.force_agent_pos(self.obs_id, obs_pos)
+            self.crowd.teleport_agent(self.obs_id, obs_pos)
             
             # Handle target changes from GUI
             if self.state["force_target"]:

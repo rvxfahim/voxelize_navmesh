@@ -70,6 +70,11 @@ class Crowd:
         pos_c = self._to_c3(pos_zup)
         self._lib.nm_crowd_force_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c)
 
+    def sync_agent_pos(self, idx: int, pos_zup) -> bool:
+        """Snap agent to nearest navmesh poly and update corridor without resetting the move target."""
+        pos_c = self._to_c3(pos_zup)
+        return bool(self._lib.nm_crowd_sync_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c))
+
     def teleport_agent(self, idx: int, pos_zup):
         pos_c = self._to_c3(pos_zup)
         return bool(self._lib.nm_crowd_teleport_agent(ctypes.c_void_p(self._handle), idx, pos_c))
