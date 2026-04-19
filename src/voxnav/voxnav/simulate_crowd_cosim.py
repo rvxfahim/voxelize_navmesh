@@ -24,6 +24,7 @@ from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Twist
+from sensor_msgs.msg import PointCloud2
 from tf_transformations import euler_from_quaternion
 
 # Try to import from the voxnav package
@@ -34,6 +35,113 @@ except ImportError:
     if _pkg_dir not in sys.path:
         sys.path.insert(0, _pkg_dir)
     from navmesh import NavMesh, NavMeshQuery, Crowd
+
+
+def _pointcloud2_to_xyz(msg):
+    """Parse a PointCloud2 message into an Nx3 float32 numpy array (Z-up).
+
+    Returns None if the message contains no finite points.
+    """
+    n = msg.width * msg.height
+    if n == 0:
+        return None
+    try:
+        fields = {f.name: f.offset for f in msg.fields}
+        x_off, y_off, z_off = fields['x'], fields['y'], fields['z']
+    except KeyError:
+        return None
+    ps = msg.point_step
+    data = np.frombuffer(bytes(msg.data), dtype=np.uint8).reshape(n, ps)
+    x = np.frombuffer(data[:, x_off:x_off + 4].tobytes(), dtype=np.float32)
+    y = np.frombuffer(data[:, y_off:y_off + 4].tobytes(), dtype=np.float32)
+    z = np.frombuffer(data[:, z_off:z_off + 4].tobytes(), dtype=np.float32)
+    pts = np.column_stack([x, y, z])
+    valid = np.isfinite(pts).all(axis=1)
+    return pts[valid] if valid.any() else None
+
+
+class DynamicObstacleManager:
+    """Manages a pool of crowd agents derived from live foreground point clouds.
+
+    Each unique 3-D voxel cell occupied by foreground points becomes one static
+    crowd agent.  Agents that have not been refreshed within *decay_s* seconds
+    are automatically removed (ghost / decay behaviour).
+    """
+
+    def __init__(self, crowd, decay_ms=500, voxel_size=0.10,
+                 obstacle_radius=0.05, obstacle_height=0.10, max_obstacles=20):
+        self._crowd = crowd
+        self._decay_s = decay_ms / 1000.0
+        self._voxel = float(voxel_size)
+        self._radius = float(obstacle_radius)
+        self._height = float(obstacle_height)
+        self._max = int(max_obstacles)
+        # voxel_key -> {"agent_id": int, "pos_zup": ndarray, "last_seen": float}
+        self._cells = {}
+
+    # ------------------------------------------------------------------
+    def _key(self, pt):
+        return tuple((pt / self._voxel).astype(np.int64))
+
+    def _center(self, key):
+        return (np.array(key, dtype=np.float32) + 0.5) * self._voxel
+
+    # ------------------------------------------------------------------
+    def update(self, new_points_zup, current_time):
+        """Process a new batch of foreground points and expire stale obstacles.
+
+        new_points_zup: Nx3 float32 in ROS Z-up frame, or None (no new data).
+        """
+        if new_points_zup is not None and len(new_points_zup) > 0:
+            for pt in new_points_zup:
+                key = self._key(pt)
+                if key in self._cells:
+                    self._cells[key]["last_seen"] = current_time
+                elif len(self._cells) < self._max:
+                    center = self._center(key)
+                    try:
+                        agent_id = self._crowd.add_agent(
+                            center,
+                            radius=self._radius,
+                            height=self._height,
+                            maxAcceleration=0.0,
+                            maxSpeed=0.0,
+                            collisionQueryRange=self._radius * 2,
+                        )
+                        self._cells[key] = {
+                            "agent_id": agent_id,
+                            "pos_zup": center,
+                            "last_seen": current_time,
+                        }
+                    except RuntimeError:
+                        pass  # crowd pool exhausted
+
+        # Evict agents whose last refresh is older than decay_s
+        expired = [k for k, v in self._cells.items()
+                   if current_time - v["last_seen"] > self._decay_s]
+        for key in expired:
+            self._crowd.remove_agent(self._cells[key]["agent_id"])
+            del self._cells[key]
+
+        # Keep active agents pinned to their cell centres
+        for cell in self._cells.values():
+            self._crowd.teleport_agent(cell["agent_id"], cell["pos_zup"])
+
+    def clear(self):
+        for cell in self._cells.values():
+            try:
+                self._crowd.remove_agent(cell["agent_id"])
+            except Exception:
+                pass
+        self._cells.clear()
+
+    @property
+    def count(self):
+        return len(self._cells)
+
+    @property
+    def active_positions(self):
+        return [cell["pos_zup"] for cell in self._cells.values()]
 
 
 class CrowdCosimNode(Node):
@@ -52,14 +160,26 @@ class CrowdCosimNode(Node):
         # snapping to the wrong floor (e.g. 1.0 for a 3 m floor pitch).
         # -1.0 means use the crowd's default extents.
         self.declare_parameter('snap_vextent', -1.0)
+        self.declare_parameter('dyn_obstacle_source', 'cloud')   # 'cloud' | 'none'
+        self.declare_parameter('dyn_obstacle_decay_ms', 500)
+        self.declare_parameter('dyn_obstacle_voxel_m', 0.10)
+        self.declare_parameter('dyn_obstacle_radius', 0.05)
+        self.declare_parameter('dyn_obstacle_max', 20)
+        self.declare_parameter('robot_radius', 0.3)
 
-        self.max_linear_speed = self.get_parameter('max_linear_speed').value
-        self.max_angular_speed = self.get_parameter('max_angular_speed').value
+        self.max_linear_speed = float(self.get_parameter('max_linear_speed').value)
+        self.max_angular_speed = float(self.get_parameter('max_angular_speed').value)
         self.update_rate = self.get_parameter('update_rate').value
         self.kp_angular = self.get_parameter('kp_angular').value
         _vext = self.get_parameter('snap_vextent').value
         self.snap_vextent: float | None = _vext if _vext > 0 else None
-        
+        self.dyn_source = self.get_parameter('dyn_obstacle_source').value
+        self.dyn_decay_ms = int(self.get_parameter('dyn_obstacle_decay_ms').value)
+        self.dyn_voxel = float(self.get_parameter('dyn_obstacle_voxel_m').value)
+        self.dyn_radius = float(self.get_parameter('dyn_obstacle_radius').value)
+        self.dyn_max_obstacles = int(self.get_parameter('dyn_obstacle_max').value)
+        self.robot_radius = float(self.get_parameter('robot_radius').value)
+
         # Thread-safe state
         self.state_lock = threading.Lock()
         self.state = {
@@ -74,7 +194,9 @@ class CrowdCosimNode(Node):
             "request_move": False,
             "robot_pose": None,  # Latest Odometry message
             "robot_pos": None,   # Extracted position [x, y, z]
-            "robot_heading": 0.0  # Yaw angle
+            "robot_heading": 0.0,  # Yaw angle
+            "dyn_points": None,  # Latest foreground cloud (Nx3 float32, Z-up)
+            "dyn_obs_positions": [],  # Z-up positions of active dynamic obstacle agents
         }
         
         # Recast/Detour objects
@@ -85,7 +207,8 @@ class CrowdCosimNode(Node):
         self.crowd = None
         self.robot_id = None
         self.obs_id = None
-        
+        self.dyn_obs_mgr = None
+
         # Visualization
         self.vis = None
         self.robot_mesh = None
@@ -111,7 +234,18 @@ class CrowdCosimNode(Node):
             '/cmd_vel',
             10
         )
-        
+
+        if self.dyn_source == 'cloud':
+            self._foreground_cloud_sub = self.create_subscription(
+                PointCloud2,
+                '/foreground_cloud',
+                self.foreground_cloud_callback,
+                10,
+            )
+            self.get_logger().info('Subscribed to /foreground_cloud for dynamic obstacles')
+        else:
+            self.get_logger().info('Dynamic obstacles disabled (dyn_obstacle_source=none)')
+
         # Timer for simulation updates (30 Hz default)
         timer_period = 1.0 / self.update_rate
         self.timer = self.create_timer(timer_period, self.update_simulation)
@@ -140,6 +274,12 @@ class CrowdCosimNode(Node):
             ])
             self.state["robot_heading"] = yaw
     
+    def foreground_cloud_callback(self, msg):
+        """Store latest foreground point cloud for consumption by the timer callback."""
+        pts = _pointcloud2_to_xyz(msg)
+        with self.state_lock:
+            self.state["dyn_points"] = pts
+
     def update_simulation(self):
         """Timer callback for simulation updates."""
         if self.crowd is None or self.nm is None:
@@ -193,7 +333,17 @@ class CrowdCosimNode(Node):
                 else:
                     self.get_logger().info(f'Move requested to: {np.round(target_pos, 3)}')
                 self.state["request_move"] = False
-        
+
+            # Consume latest foreground cloud (None = no new data this tick)
+            dyn_pts = self.state["dyn_points"]
+            self.state["dyn_points"] = None
+
+        # Update dynamic obstacles from lidar foreground
+        if self.dyn_obs_mgr is not None:
+            self.dyn_obs_mgr.update(dyn_pts, time.time())
+            with self.state_lock:
+                self.state["dyn_obs_positions"] = self.dyn_obs_mgr.active_positions
+
         # Compute dt
         current_time = time.time()
         dt = current_time - self.last_time
@@ -240,11 +390,13 @@ class CrowdCosimNode(Node):
         angular_vel = self.kp_angular * angular_error
         angular_vel = np.clip(angular_vel, -self.max_angular_speed, self.max_angular_speed)
         
-        # Linear velocity (magnitude of velocity vector in XY plane)
+        # Linear velocity scaled by heading alignment: spins in place when misaligned,
+        # ramps to full speed as the robot aligns with the desired heading.
         speed = math.sqrt(vel_x**2 + vel_y**2)
         speed = min(speed, self.max_linear_speed)
-        
-        cmd_vel.linear.x = speed
+        linear_vel = speed * max(0.0, math.cos(angular_error))
+
+        cmd_vel.linear.x = linear_vel
         cmd_vel.linear.y = 0.0
         cmd_vel.linear.z = 0.0
         cmd_vel.angular.x = 0.0
@@ -266,7 +418,9 @@ class CrowdCosimNode(Node):
         """Initialize Recast navmesh and crowd."""
         self.nm = NavMesh(self.navmesh_file)
         self.nmq = NavMeshQuery(self.nm)
-        self.crowd = Crowd(self.nm, max_agents=10, max_agent_radius=0.5)
+        # 2 reserved (robot + GUI obstacle) + dynamic obstacle pool
+        max_agents = 2 + self.dyn_max_obstacles
+        self.crowd = Crowd(self.nm, max_agents=max_agents, max_agent_radius=0.5)
         
         # Find reasonable start and end positions
         start_pos = np.array([-4.0, 0.0, 0.0])
@@ -286,12 +440,15 @@ class CrowdCosimNode(Node):
             self.state["target_z"] = end_pos[2]
         
         # Add robot agent (position will be updated from /robotPose)
+        # _robot_cqr = max(3.0, self.dyn_radius * 4.0 + self.robot_radius * 2)
         self.robot_id = self.crowd.add_agent(
             start_pos,
-            radius=0.3,
+            radius=self.robot_radius,
             maxAcceleration=8.0,
-            maxSpeed=2.0,
-            collisionQueryRange=2.0
+            maxSpeed=float(self.max_linear_speed),
+            collisionQueryRange=12.0,
+            separationWeight=0,
+            updateFlags=1 | 2 | 4 | 8,
         )
         
         # Add obstacle agent
@@ -307,17 +464,35 @@ class CrowdCosimNode(Node):
             maxSpeed=0.0
         )
         
+        if self.dyn_source == 'cloud':
+            self.dyn_obs_mgr = DynamicObstacleManager(
+                self.crowd,
+                decay_ms=self.dyn_decay_ms,
+                voxel_size=self.dyn_voxel,
+                obstacle_radius=self.dyn_radius,
+                obstacle_height=self.dyn_voxel,
+                max_obstacles=self.dyn_max_obstacles,
+            )
+
         self.get_logger().info('Recast crowd initialized')
         self.get_logger().info(f'Robot agent ID: {self.robot_id}')
         self.get_logger().info(f'Obstacle agent ID: {self.obs_id}')
-        
+        self.get_logger().info(
+            f'Dynamic obstacles: source={self.dyn_source}, '
+            f'max={self.dyn_max_obstacles}, decay={self.dyn_decay_ms}ms, '
+            f'voxel={self.dyn_voxel}m, radius={self.dyn_radius}m'
+        )
+
         return end_pos
     
     def shutdown(self):
         """Clean shutdown of resources."""
         with self.state_lock:
             self.state["run"] = False
-        
+
+        if self.dyn_obs_mgr is not None:
+            self.dyn_obs_mgr.clear()
+
         if self.crowd is not None:
             self.crowd.close()
         if self.nmq is not None:
@@ -525,7 +700,22 @@ def main():
         obs_mesh.paint_uniform_color([1.0, 0.2, 0.2])
         obs_mesh.compute_vertex_normals()
         vis.add_geometry(obs_mesh)
-        
+
+        # Dynamic obstacle pool: pre-allocate N orange cylinders, hidden below navmesh floor when inactive.
+        # Using a position within XY bounds of the navmesh avoids expanding the O3D scene bounding box
+        # (which would make scroll zoom sensitivity enormous).
+        _HIDDEN = np.array([(bmin[0] + bmax[0]) / 2, (bmin[1] + bmax[1]) / 2, bmin[2] - 2.0])
+        _dyn_r = node.dyn_radius
+        _dyn_h = 1.0
+        dyn_obs_meshes = []
+        for _ in range(node.dyn_max_obstacles):
+            m = o3d.geometry.TriangleMesh.create_cylinder(radius=_dyn_r, height=_dyn_h)
+            m.paint_uniform_color([1.0, 0.6, 0.0])
+            m.compute_vertex_normals()
+            m.translate(_HIDDEN)
+            vis.add_geometry(m)
+            dyn_obs_meshes.append(m)
+
         node.get_logger().info("Co-simulation started. Waiting for /robotPose...")
         node.get_logger().info("Control obstacle and target via GUI. Close windows to exit.")
         
@@ -537,6 +727,11 @@ def main():
         ros_thread = threading.Thread(target=executor.spin, daemon=True)
         ros_thread.start()
         
+        # Precompute base geometry for dynamic obstacle cylinders (reset each frame)
+        _dyn_base_verts_np = np.asarray(
+            o3d.geometry.TriangleMesh.create_cylinder(radius=_dyn_r, height=_dyn_h).vertices
+        ).copy()
+
         # Main loop: GUI updates and visualization
         while True:
             with node.state_lock:
@@ -578,11 +773,18 @@ def main():
             
             # Update obstacle mesh
             obs_mesh.vertices = o3d.geometry.TriangleMesh.create_cylinder(radius=0.6, height=1.0).vertices
-            R = obs_mesh.get_rotation_matrix_from_xyz((np.pi/2, 0, 0))
-            obs_mesh.rotate(R, center=(0, 0, 0))
             obs_mesh.translate(obs_pos_viz)
             vis.update_geometry(obs_mesh)
-            
+
+            # Update dynamic obstacle pool
+            with node.state_lock:
+                dyn_positions = list(node.state["dyn_obs_positions"])
+            for i, m in enumerate(dyn_obs_meshes):
+                m.vertices = o3d.utility.Vector3dVector(_dyn_base_verts_np)
+                pos = dyn_positions[i] if i < len(dyn_positions) else _HIDDEN
+                m.translate(pos)
+                vis.update_geometry(m)
+
             time.sleep(1/60)
     
     finally:

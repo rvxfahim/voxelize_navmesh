@@ -32,7 +32,8 @@ class Crowd:
         yup = to_yup(arr)[0]
         return (ctypes.c_float * 3)(float(yup[0]), float(yup[1]), float(yup[2]))
 
-    def add_agent(self, pos_zup, radius=0.3, height=2.0, maxAcceleration=8.0, maxSpeed=3.5, collisionQueryRange=12.0):
+    def add_agent(self, pos_zup, radius=0.3, height=2.0, maxAcceleration=8.0, maxSpeed=3.5,
+                  collisionQueryRange=0.5, separationWeight=2.0, updateFlags=3):
         pos_c = self._to_c3(pos_zup)
         params = self._crowd_params_type()
         params.radius = float(radius)
@@ -41,8 +42,8 @@ class Crowd:
         params.maxSpeed = float(maxSpeed)
         params.collisionQueryRange = float(collisionQueryRange)
         params.pathOptimizationRange = float(radius * 30.0)
-        params.separationWeight = 2.0
-        params.updateFlags = 1 | 2 | 4 | 8
+        params.separationWeight = float(separationWeight)
+        params.updateFlags = int(updateFlags)
         params.obstacleAvoidanceType = 0
         params.queryFilterType = 0
         params.userData = None

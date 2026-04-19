@@ -54,13 +54,55 @@ def generate_launch_description():
         default_value='30.0',
         description='Simulation update rate (Hz)'
     )
-    
+
+    robot_radius_arg = DeclareLaunchArgument(
+        'robot_radius',
+        default_value='1.0',
+        description='Physical radius of the robot (m) — used for crowd avoidance'
+    )
+
+    dyn_obstacle_source_arg = DeclareLaunchArgument(
+        'dyn_obstacle_source',
+        default_value='cloud',
+        description="Dynamic obstacle source: 'cloud' (/foreground_cloud) or 'none'"
+    )
+
+    dyn_obstacle_decay_ms_arg = DeclareLaunchArgument(
+        'dyn_obstacle_decay_ms',
+        default_value='20000',
+        description='Ghost/decay time for dynamic obstacles (ms)'
+    )
+
+    dyn_obstacle_voxel_m_arg = DeclareLaunchArgument(
+        'dyn_obstacle_voxel_m',
+        default_value='1.0',
+        description='Voxel grid cell size for obstacle clustering (m)'
+    )
+
+    dyn_obstacle_radius_arg = DeclareLaunchArgument(
+        'dyn_obstacle_radius',
+        default_value='1.0',
+        description='Crowd agent radius for each dynamic obstacle (m)'
+    )
+
+    dyn_obstacle_max_arg = DeclareLaunchArgument(
+        'dyn_obstacle_max',
+        default_value='2000',
+        description='Maximum simultaneous dynamic obstacle agents'
+    )
+
     # Get configuration values
     navmesh_file = LaunchConfiguration('navmesh_file')
     obj_file = LaunchConfiguration('obj_file')
     max_linear_speed = LaunchConfiguration('max_linear_speed')
     max_angular_speed = LaunchConfiguration('max_angular_speed')
     update_rate = LaunchConfiguration('update_rate')
+    robot_radius = LaunchConfiguration('robot_radius')
+    dyn_obstacle_source = LaunchConfiguration('dyn_obstacle_source')
+    dyn_obstacle_decay_ms = LaunchConfiguration('dyn_obstacle_decay_ms')
+    dyn_obstacle_voxel_m = LaunchConfiguration('dyn_obstacle_voxel_m')
+    dyn_obstacle_radius = LaunchConfiguration('dyn_obstacle_radius')
+    dyn_obstacle_max = LaunchConfiguration('dyn_obstacle_max')
     
     # Resolve installed script path
     pkg_prefix = get_package_prefix('voxnav')
@@ -73,7 +115,13 @@ def generate_launch_description():
         '--ros-args',
         '-p', ['max_linear_speed:=', max_linear_speed],
         '-p', ['max_angular_speed:=', max_angular_speed],
-        '-p', ['update_rate:=', update_rate]
+        '-p', ['update_rate:=', update_rate],
+        '-p', ['robot_radius:=', robot_radius],
+        '-p', ['dyn_obstacle_source:=', dyn_obstacle_source],
+        '-p', ['dyn_obstacle_decay_ms:=', dyn_obstacle_decay_ms],
+        '-p', ['dyn_obstacle_voxel_m:=', dyn_obstacle_voxel_m],
+        '-p', ['dyn_obstacle_radius:=', dyn_obstacle_radius],
+        '-p', ['dyn_obstacle_max:=', dyn_obstacle_max],
     ]
     
     # For GUI applications, use ExecuteProcess
@@ -89,5 +137,11 @@ def generate_launch_description():
         max_linear_speed_arg,
         max_angular_speed_arg,
         update_rate_arg,
+        robot_radius_arg,
+        dyn_obstacle_source_arg,
+        dyn_obstacle_decay_ms_arg,
+        dyn_obstacle_voxel_m_arg,
+        dyn_obstacle_radius_arg,
+        dyn_obstacle_max_arg,
         simulate_crowd_cosim_process,
     ])
