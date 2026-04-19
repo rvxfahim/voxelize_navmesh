@@ -63,85 +63,107 @@ def _pointcloud2_to_xyz(msg):
 class DynamicObstacleManager:
     """Manages a pool of crowd agents derived from live foreground point clouds.
 
-    Each unique 3-D voxel cell occupied by foreground points becomes one static
-    crowd agent.  Agents that have not been refreshed within *decay_s* seconds
-    are automatically removed (ghost / decay behaviour).
+    Each individual point becomes one static crowd agent. If the maximum pool size
+    is reached, the oldest entries (FIFO queue) are evicted first. Points 
+    older than decay_s are also removed automatically.
     """
 
     def __init__(self, crowd, decay_ms=500, voxel_size=0.10,
-                 obstacle_radius=0.05, obstacle_height=0.10, max_obstacles=20):
+                 obstacle_radius=0.2, obstacle_height=0.2, max_obstacles=2000):
         self._crowd = crowd
         self._decay_s = decay_ms / 1000.0
-        self._voxel = float(voxel_size)
+        self._voxel_size = float(voxel_size)
         self._radius = float(obstacle_radius)
         self._height = float(obstacle_height)
         self._max = int(max_obstacles)
-        # voxel_key -> {"agent_id": int, "pos_zup": ndarray, "last_seen": float}
-        self._cells = {}
+        # Dictionary-based LRU queue: maps agent_id -> {"pos_zup": ndarray, "added_time": float, "voxel_idx": tuple}
+        self._agents = {}
+        # Spatial map for deduplication: maps voxel_idx -> agent_id
+        self._spatial_map = {}
 
-    # ------------------------------------------------------------------
-    def _key(self, pt):
-        return tuple((pt / self._voxel).astype(np.int64))
-
-    def _center(self, key):
-        return (np.array(key, dtype=np.float32) + 0.5) * self._voxel
-
-    # ------------------------------------------------------------------
     def update(self, new_points_zup, current_time):
-        """Process a new batch of foreground points and expire stale obstacles.
+        """Process a new batch of foreground points and expire stale obstacles."""
+        # 1. Evict any agents older than decay_s
+        evict_ids = []
+        for agent_id, data in self._agents.items():
+            if current_time - data["added_time"] > self._decay_s:
+                evict_ids.append(agent_id)
+            else:
+                break  # Ordered dictionary (Python 3.7+), can stop early
+        
+        for agent_id in evict_ids:
+            self._remove_agent(agent_id)
 
-        new_points_zup: Nx3 float32 in ROS Z-up frame, or None (no new data).
-        """
         if new_points_zup is not None and len(new_points_zup) > 0:
+            # Prevent pure array-slicing on dense clouds by downsampling them spatially.
+            if len(new_points_zup) > self._max:
+                pcd = o3d.geometry.PointCloud()
+                pcd.points = o3d.utility.Vector3dVector(new_points_zup)
+                pcd = pcd.voxel_down_sample(voxel_size=self._radius)
+                new_points_zup = np.asarray(pcd.points)
+                if len(new_points_zup) > self._max:
+                    idx = np.random.choice(len(new_points_zup), self._max, replace=False)
+                    new_points_zup = new_points_zup[idx]
+
             for pt in new_points_zup:
-                key = self._key(pt)
-                if key in self._cells:
-                    self._cells[key]["last_seen"] = current_time
-                elif len(self._cells) < self._max:
-                    center = self._center(key)
+                voxel_idx = tuple(np.floor(pt / self._voxel_size).astype(int))
+                
+                if voxel_idx in self._spatial_map:
+                    # Point exists spatially, refresh its timer and move to end of queue
+                    agent_id = self._spatial_map[voxel_idx]
+                    data = self._agents.pop(agent_id)
+                    data["added_time"] = current_time
+                    self._agents[agent_id] = data
+                else:
+                    # 2. FIFO eviction: Make room if we are at maximum capacity
+                    while len(self._agents) >= self._max:
+                        oldest_id = next(iter(self._agents))
+                        self._remove_agent(oldest_id)
+                    
+                    # 3. Add point as new cylinder agent
                     try:
                         agent_id = self._crowd.add_agent(
-                            center,
+                            pt,
                             radius=self._radius,
                             height=self._height,
                             maxAcceleration=0.0,
                             maxSpeed=0.0,
                             collisionQueryRange=self._radius * 2,
                         )
-                        self._cells[key] = {
-                            "agent_id": agent_id,
-                            "pos_zup": center,
-                            "last_seen": current_time,
+                        self._agents[agent_id] = {
+                            "pos_zup": pt,
+                            "added_time": current_time,
+                            "voxel_idx": voxel_idx,
                         }
+                        self._spatial_map[voxel_idx] = agent_id
                     except RuntimeError:
-                        pass  # crowd pool exhausted
+                        pass  # Under-layer C++ pool exhausted completely
 
-        # Evict agents whose last refresh is older than decay_s
-        expired = [k for k, v in self._cells.items()
-                   if current_time - v["last_seen"] > self._decay_s]
-        for key in expired:
-            self._crowd.remove_agent(self._cells[key]["agent_id"])
-            del self._cells[key]
+        # Keep active agents strictly situated (for safety within DetourCrowd tracking)
+        for agent_id, data in self._agents.items():
+            self._crowd.teleport_agent(agent_id, data["pos_zup"])
 
-        # Keep active agents pinned to their cell centres
-        for cell in self._cells.values():
-            self._crowd.teleport_agent(cell["agent_id"], cell["pos_zup"])
-
-    def clear(self):
-        for cell in self._cells.values():
+    def _remove_agent(self, agent_id):
+        data = self._agents.pop(agent_id, None)
+        if data:
+            self._spatial_map.pop(data["voxel_idx"], None)
             try:
-                self._crowd.remove_agent(cell["agent_id"])
+                self._crowd.remove_agent(agent_id)
             except Exception:
                 pass
-        self._cells.clear()
+
+    def clear(self):
+        """Evict all remaining dynamic agents."""
+        for agent_id in list(self._agents.keys()):
+            self._remove_agent(agent_id)
 
     @property
     def count(self):
-        return len(self._cells)
+        return len(self._agents)
 
     @property
     def active_positions(self):
-        return [cell["pos_zup"] for cell in self._cells.values()]
+        return [data["pos_zup"] for data in self._agents.values()]
 
 
 class CrowdCosimNode(Node):
@@ -164,6 +186,7 @@ class CrowdCosimNode(Node):
         self.declare_parameter('dyn_obstacle_decay_ms', 500)
         self.declare_parameter('dyn_obstacle_voxel_m', 0.10)
         self.declare_parameter('dyn_obstacle_radius', 0.05)
+        self.declare_parameter('dyn_obstacle_height', 0.10)
         self.declare_parameter('dyn_obstacle_max', 20)
         self.declare_parameter('robot_radius', 0.3)
 
@@ -177,6 +200,7 @@ class CrowdCosimNode(Node):
         self.dyn_decay_ms = int(self.get_parameter('dyn_obstacle_decay_ms').value)
         self.dyn_voxel = float(self.get_parameter('dyn_obstacle_voxel_m').value)
         self.dyn_radius = float(self.get_parameter('dyn_obstacle_radius').value)
+        self.dyn_height = float(self.get_parameter('dyn_obstacle_height').value)
         self.dyn_max_obstacles = int(self.get_parameter('dyn_obstacle_max').value)
         self.robot_radius = float(self.get_parameter('robot_radius').value)
 
@@ -446,9 +470,9 @@ class CrowdCosimNode(Node):
             radius=self.robot_radius,
             maxAcceleration=8.0,
             maxSpeed=float(self.max_linear_speed),
-            collisionQueryRange=12.0,
-            separationWeight=0,
-            updateFlags=1 | 2 | 4 | 8,
+            collisionQueryRange=20.0,
+            separationWeight=0.0,
+            updateFlags=1 | 2 | 4 | 8 | 16,
         )
         
         # Add obstacle agent
@@ -470,7 +494,7 @@ class CrowdCosimNode(Node):
                 decay_ms=self.dyn_decay_ms,
                 voxel_size=self.dyn_voxel,
                 obstacle_radius=self.dyn_radius,
-                obstacle_height=self.dyn_voxel,
+                obstacle_height=self.dyn_height,
                 max_obstacles=self.dyn_max_obstacles,
             )
 
@@ -616,7 +640,7 @@ def main():
     if '--ros-args' in sys.argv:
         idx = sys.argv.index('--ros-args')
         script_args = sys.argv[1:idx]
-        ros_args = sys.argv[idx+1:]
+        ros_args = sys.argv[idx:]
     else:
         script_args = sys.argv[1:]
     
@@ -706,7 +730,7 @@ def main():
         # (which would make scroll zoom sensitivity enormous).
         _HIDDEN = np.array([(bmin[0] + bmax[0]) / 2, (bmin[1] + bmax[1]) / 2, bmin[2] - 2.0])
         _dyn_r = node.dyn_radius
-        _dyn_h = 1.0
+        _dyn_h = node.dyn_height
         dyn_obs_meshes = []
         for _ in range(node.dyn_max_obstacles):
             m = o3d.geometry.TriangleMesh.create_cylinder(radius=_dyn_r, height=_dyn_h)

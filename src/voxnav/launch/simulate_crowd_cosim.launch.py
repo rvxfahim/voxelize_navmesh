@@ -69,25 +69,31 @@ def generate_launch_description():
 
     dyn_obstacle_decay_ms_arg = DeclareLaunchArgument(
         'dyn_obstacle_decay_ms',
-        default_value='20000',
+        default_value='500',
         description='Ghost/decay time for dynamic obstacles (ms)'
     )
 
     dyn_obstacle_voxel_m_arg = DeclareLaunchArgument(
         'dyn_obstacle_voxel_m',
-        default_value='1.0',
+        default_value='0.01',
         description='Voxel grid cell size for obstacle clustering (m)'
+    )
+
+    dyn_obstacle_height_arg = DeclareLaunchArgument(
+        'dyn_obstacle_height',
+        default_value='0.5',
+        description='Agent height for each dynamic obstacle (m)'
     )
 
     dyn_obstacle_radius_arg = DeclareLaunchArgument(
         'dyn_obstacle_radius',
-        default_value='1.0',
+        default_value='0.5',
         description='Crowd agent radius for each dynamic obstacle (m)'
     )
 
     dyn_obstacle_max_arg = DeclareLaunchArgument(
         'dyn_obstacle_max',
-        default_value='2000',
+        default_value='500',
         description='Maximum simultaneous dynamic obstacle agents'
     )
 
@@ -101,6 +107,7 @@ def generate_launch_description():
     dyn_obstacle_source = LaunchConfiguration('dyn_obstacle_source')
     dyn_obstacle_decay_ms = LaunchConfiguration('dyn_obstacle_decay_ms')
     dyn_obstacle_voxel_m = LaunchConfiguration('dyn_obstacle_voxel_m')
+    dyn_obstacle_height = LaunchConfiguration('dyn_obstacle_height')
     dyn_obstacle_radius = LaunchConfiguration('dyn_obstacle_radius')
     dyn_obstacle_max = LaunchConfiguration('dyn_obstacle_max')
     
@@ -120,6 +127,7 @@ def generate_launch_description():
         '-p', ['dyn_obstacle_source:=', dyn_obstacle_source],
         '-p', ['dyn_obstacle_decay_ms:=', dyn_obstacle_decay_ms],
         '-p', ['dyn_obstacle_voxel_m:=', dyn_obstacle_voxel_m],
+        '-p', ['dyn_obstacle_height:=', dyn_obstacle_height],
         '-p', ['dyn_obstacle_radius:=', dyn_obstacle_radius],
         '-p', ['dyn_obstacle_max:=', dyn_obstacle_max],
     ]
@@ -141,6 +149,7 @@ def generate_launch_description():
         dyn_obstacle_source_arg,
         dyn_obstacle_decay_ms_arg,
         dyn_obstacle_voxel_m_arg,
+        dyn_obstacle_height_arg,
         dyn_obstacle_radius_arg,
         dyn_obstacle_max_arg,
         simulate_crowd_cosim_process,

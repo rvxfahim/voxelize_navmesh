@@ -32,7 +32,7 @@ class Crowd:
         yup = to_yup(arr)[0]
         return (ctypes.c_float * 3)(float(yup[0]), float(yup[1]), float(yup[2]))
 
-    def add_agent(self, pos_zup, radius=0.3, height=2.0, maxAcceleration=8.0, maxSpeed=3.5,
+    def add_agent(self, pos_zup, radius=0.3, height=1.3, maxAcceleration=8.0, maxSpeed=3.5,
                   collisionQueryRange=0.5, separationWeight=2.0, updateFlags=3):
         pos_c = self._to_c3(pos_zup)
         params = self._crowd_params_type()
