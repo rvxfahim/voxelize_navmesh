@@ -470,8 +470,8 @@ class CrowdCosimNode(Node):
             radius=self.robot_radius,
             maxAcceleration=8.0,
             maxSpeed=float(self.max_linear_speed),
-            collisionQueryRange=20.0,
-            separationWeight=0.0,
+            collisionQueryRange=2.5,
+            separationWeight=2.0,
             updateFlags=1 | 2 | 4 | 8 | 16,
         )
         

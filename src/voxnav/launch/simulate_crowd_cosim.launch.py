@@ -45,7 +45,7 @@ def generate_launch_description():
     
     max_angular_speed_arg = DeclareLaunchArgument(
         'max_angular_speed',
-        default_value='1.5',
+        default_value='5.5',
         description='Maximum angular velocity (rad/s)'
     )
     
@@ -57,7 +57,7 @@ def generate_launch_description():
 
     robot_radius_arg = DeclareLaunchArgument(
         'robot_radius',
-        default_value='1.0',
+        default_value='0.5',
         description='Physical radius of the robot (m) — used for crowd avoidance'
     )
 
@@ -69,7 +69,7 @@ def generate_launch_description():
 
     dyn_obstacle_decay_ms_arg = DeclareLaunchArgument(
         'dyn_obstacle_decay_ms',
-        default_value='500',
+        default_value='1500',
         description='Ghost/decay time for dynamic obstacles (ms)'
     )
 
@@ -81,13 +81,13 @@ def generate_launch_description():
 
     dyn_obstacle_height_arg = DeclareLaunchArgument(
         'dyn_obstacle_height',
-        default_value='0.5',
+        default_value='1.0',
         description='Agent height for each dynamic obstacle (m)'
     )
 
     dyn_obstacle_radius_arg = DeclareLaunchArgument(
         'dyn_obstacle_radius',
-        default_value='0.5',
+        default_value='0.3',
         description='Crowd agent radius for each dynamic obstacle (m)'
     )
 
