@@ -18,10 +18,16 @@ def _candidate_library_paths():
     except ImportError:
         pass
 
+    pkg_dir = os.path.dirname(here)  # src/voxnav/
+    repo_dir = os.path.dirname(os.path.dirname(pkg_dir))  # repo root
     paths.extend(
         [
             os.path.join(here, "build", "navmesh_bridge.so"),
             os.path.join(here, "navmesh_bridge.so"),
+            os.path.join(pkg_dir, "build", "navmesh_bridge.so"),
+            os.path.join(pkg_dir, "build", "voxnav", "navmesh_bridge.so"),
+            os.path.join(repo_dir, "build", "voxnav", "navmesh_bridge.so"),
+            os.path.join(repo_dir, "install", "voxnav", "lib", "navmesh_bridge.so"),
             os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(here))), "lib", "navmesh_bridge.so"),
         ]
     )

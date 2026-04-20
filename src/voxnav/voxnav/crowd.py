@@ -5,10 +5,11 @@ from ._coords import to_yup, to_zup
 
 
 class Crowd:
-    def __init__(self, navmesh, lib, crowd_params_type, max_agents: int = 100, max_agent_radius: float = 2.0):
+    def __init__(self, navmesh, lib, crowd_params_type, obstacle_avoidance_params_type, max_agents: int = 100, max_agent_radius: float = 2.0):
         self._nm = navmesh
         self._lib = lib
         self._crowd_params_type = crowd_params_type
+        self._obstacle_avoidance_params_type = obstacle_avoidance_params_type
         self._handle = self._lib.nm_crowd_create(ctypes.c_void_p(navmesh._raw_handle()), max_agents, max_agent_radius)
         if not self._handle:
             raise RuntimeError("Failed to create Crowd")
@@ -33,7 +34,7 @@ class Crowd:
         return (ctypes.c_float * 3)(float(yup[0]), float(yup[1]), float(yup[2]))
 
     def add_agent(self, pos_zup, radius=0.3, height=1.3, maxAcceleration=8.0, maxSpeed=3.5,
-                  collisionQueryRange=0.5, separationWeight=2.0, updateFlags=3):
+                  collisionQueryRange=0.5, separationWeight=2.0, obstacleWeight=0.5, updateFlags=3, obstacleAvoidanceType=3):
         pos_c = self._to_c3(pos_zup)
         params = self._crowd_params_type()
         params.radius = float(radius)
@@ -43,8 +44,9 @@ class Crowd:
         params.collisionQueryRange = float(collisionQueryRange)
         params.pathOptimizationRange = float(radius * 30.0)
         params.separationWeight = float(separationWeight)
+        params.obstacleWeight = float(obstacleWeight)
         params.updateFlags = int(updateFlags)
-        params.obstacleAvoidanceType = 0
+        params.obstacleAvoidanceType = int(obstacleAvoidanceType)
         params.queryFilterType = 0
         params.userData = None
 
@@ -70,6 +72,15 @@ class Crowd:
     def force_agent_pos(self, idx: int, pos_zup):
         pos_c = self._to_c3(pos_zup)
         self._lib.nm_crowd_force_agent_pos(ctypes.c_void_p(self._handle), idx, pos_c)
+
+    def set_obstacle_avoidance_params(self, params_idx: int, params):
+        self._lib.nm_crowd_set_obstacle_avoidance_params(ctypes.c_void_p(self._handle), params_idx, ctypes.byref(params))
+
+    def get_obstacle_avoidance_params(self, params_idx: int):
+        params = self._obstacle_avoidance_params_type()
+        if self._lib.nm_crowd_get_obstacle_avoidance_params(ctypes.c_void_p(self._handle), params_idx, ctypes.byref(params)):
+            return params
+        return None
 
     def sync_agent_pos(self, idx: int, pos_zup, snap_vextent: float | None = None) -> bool:
         """Snap agent to nearest navmesh poly and update corridor without resetting the move target.

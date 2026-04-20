@@ -37,12 +37,17 @@ endif()
 # Build the navmesh_bridge shared library
 add_library(navmesh_bridge SHARED
   voxnav/navmesh_bridge.cpp
+  ${RECAST_DIR}/DetourTileCache/Source/DetourTileCache.cpp
+  ${RECAST_DIR}/DetourTileCache/Source/DetourTileCacheBuilder.cpp
+  ${RECAST_DIR}/RecastDemo/Contrib/fastlz/fastlz.c
 )
 
 target_include_directories(navmesh_bridge PRIVATE
   ${RECAST_DIR}/Recast/Include
   ${RECAST_DIR}/Detour/Include
   ${RECAST_DIR}/DetourCrowd/Include
+  ${RECAST_DIR}/DetourTileCache/Include
+  ${RECAST_DIR}/RecastDemo/Contrib/fastlz
 )
 
 target_link_libraries(navmesh_bridge PUBLIC
@@ -70,17 +75,15 @@ install(
 # Install Python modules
 ament_python_install_package(voxnav)
 
-# Install the simulate_crowd.py script as an executable
+# Install executable scripts — ros2 run requires lib/<package_name>/
 install(PROGRAMS
   ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/simulate_crowd.py
   ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/simulate_crowd_cosim.py
+  ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/simulate_obstacle_cosim.py
   ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/fake_robot_pose.py
   ${CMAKE_CURRENT_SOURCE_DIR}/voxnav/navmesh_baker.py
-  DESTINATION bin
+  DESTINATION lib/${PROJECT_NAME}
 )
-
-# Make the script executable
-set(BIN_INSTALL_DIR "bin")
 
 # Install launch files
 install(DIRECTORY launch/

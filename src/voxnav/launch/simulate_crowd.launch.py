@@ -26,7 +26,7 @@ def generate_launch_description():
 
     # Resolve installed script and package prefix.
     pkg_prefix = get_package_prefix('voxnav')
-    script_path = os.path.join(pkg_prefix, 'bin', 'simulate_crowd.py')
+    script_path = os.path.join(pkg_prefix, 'lib', 'voxnav', 'simulate_crowd.py')
 
     # For GUI applications (Tkinter/Open3D), use ExecuteProcess instead of Node
     # This runs the Python script directly

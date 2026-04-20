@@ -14,11 +14,15 @@
 #include <vector>
 
 #include "DetourAlloc.h"
+#include "DetourCommon.h"
 #include "DetourCrowd.h"
 #include "DetourNavMesh.h"
 #include "DetourNavMeshBuilder.h"
 #include "DetourNavMeshQuery.h"
+#include "DetourTileCache.h"
+#include "DetourTileCacheBuilder.h"
 #include "Recast.h"
+#include "fastlz.h"
 
 // Minimal context implementation for Recast that doesn't use virtual inheritance
 // to avoid RTTI issues with static library linkage
@@ -163,6 +167,217 @@ static void calc_bounds(const std::vector<float>& verts, float out_min[3], float
         out_max[2] = std::max(out_max[2], v[2]);
     }
 }
+
+
+// ─── TileCache helpers ────────────────────────────────────────────────────────
+
+namespace {
+
+struct TCFastLZCompressor : dtTileCacheCompressor
+{
+    ~TCFastLZCompressor() override = default;
+
+    int maxCompressedSize(const int bufferSize) override {
+        return static_cast<int>(static_cast<float>(bufferSize) * 1.05f);
+    }
+
+    dtStatus compress(const unsigned char* buffer, const int bufferSize,
+                      unsigned char* compressed, const int, int* compressedSize) override {
+        *compressedSize = fastlz_compress(buffer, bufferSize, compressed);
+        return DT_SUCCESS;
+    }
+
+    dtStatus decompress(const unsigned char* compressed, const int compressedSize,
+                        unsigned char* buffer, const int maxBufferSize, int* bufferSize) override {
+        *bufferSize = fastlz_decompress(compressed, compressedSize, buffer, maxBufferSize);
+        return *bufferSize < 0 ? DT_FAILURE : DT_SUCCESS;
+    }
+};
+
+struct TCLinearAllocator : dtTileCacheAlloc
+{
+    unsigned char* buf  = nullptr;
+    size_t cap  = 0;
+    size_t top  = 0;
+    size_t high = 0;
+
+    explicit TCLinearAllocator(size_t capacity) {
+        buf = static_cast<unsigned char*>(dtAlloc(capacity, DT_ALLOC_PERM));
+        cap = capacity;
+    }
+    ~TCLinearAllocator() override { dtFree(buf); }
+
+    void reset() override {
+        high = dtMax(high, top);
+        top = 0;
+    }
+    void* alloc(size_t size) override {
+        if (!buf || top + size > cap) return nullptr;
+        unsigned char* mem = &buf[top];
+        top += size;
+        return mem;
+    }
+    void free(void*) override {}
+};
+
+struct TCSimpleMeshProcess : dtTileCacheMeshProcess
+{
+    ~TCSimpleMeshProcess() override = default;
+
+    void process(dtNavMeshCreateParams* params,
+                 unsigned char* polyAreas,
+                 unsigned short* polyFlags) override {
+        for (int i = 0; i < params->polyCount; ++i) {
+            if (polyAreas[i] == DT_TILECACHE_WALKABLE_AREA)
+                polyAreas[i] = 0;
+            polyFlags[i] = (polyAreas[i] == 0) ? 1 : 0;
+        }
+    }
+};
+
+} // anonymous namespace
+
+struct TileCacheHandle {
+    dtTileCache*         tc       = nullptr;
+    dtNavMesh*           nav      = nullptr;
+    TCLinearAllocator*   alloc    = nullptr;
+    TCFastLZCompressor*  comp     = nullptr;
+    TCSimpleMeshProcess* meshproc = nullptr;
+};
+
+static const int TILECACHESET_MAGIC   = 'T' << 24 | 'S' << 16 | 'E' << 8 | 'T';
+static const int TILECACHESET_VERSION = 1;
+
+struct TileCacheSetHeader {
+    int magic;
+    int version;
+    int numTiles;
+    dtNavMeshParams   meshParams;
+    dtTileCacheParams cacheParams;
+};
+
+struct TileCacheTileHeader {
+    dtCompressedTileRef tileRef;
+    int dataSize;
+};
+
+struct TileLayerData {
+    unsigned char* data     = nullptr;
+    int            dataSize = 0;
+};
+
+static const int TC_MAX_LAYERS = 32;
+
+// Rasterize one tile (tx, ty) from the flat mesh into compressed layer blobs.
+// base_cfg must already have tileSize, borderSize, width, height (per-tile dims) set.
+// Returns the number of layers produced; fills out_tiles[0..return-1].
+// The caller owns out_tiles[i].data (dtFree unless handed to addTile).
+static int rasterize_tile_layers(
+    rcContext*             ctx,
+    const float*           verts, int nverts,
+    const int*             tris,  int ntris,
+    const rcConfig&        base_cfg,
+    bool                   filter_low,
+    bool                   filter_ledge,
+    bool                   filter_low_height,
+    int                    tile_x,
+    int                    tile_y,
+    TileLayerData*         out_tiles,
+    int                    max_tiles
+) {
+    TCFastLZCompressor comp;
+
+    const float tcs = base_cfg.tileSize * base_cfg.cs;
+
+    rcConfig tcfg;
+    std::memcpy(&tcfg, &base_cfg, sizeof(rcConfig));
+    tcfg.bmin[0] = base_cfg.bmin[0] + tile_x * tcs;
+    tcfg.bmin[1] = base_cfg.bmin[1];
+    tcfg.bmin[2] = base_cfg.bmin[2] + tile_y * tcs;
+    tcfg.bmax[0] = base_cfg.bmin[0] + (tile_x + 1) * tcs;
+    tcfg.bmax[1] = base_cfg.bmax[1];
+    tcfg.bmax[2] = base_cfg.bmin[2] + (tile_y + 1) * tcs;
+    // Expand by border
+    tcfg.bmin[0] -= static_cast<float>(tcfg.borderSize) * tcfg.cs;
+    tcfg.bmin[2] -= static_cast<float>(tcfg.borderSize) * tcfg.cs;
+    tcfg.bmax[0] += static_cast<float>(tcfg.borderSize) * tcfg.cs;
+    tcfg.bmax[2] += static_cast<float>(tcfg.borderSize) * tcfg.cs;
+
+    rcHeightfield* solid = rcAllocHeightfield();
+    if (!solid) return 0;
+
+    if (!rcCreateHeightfield(ctx, *solid, tcfg.width, tcfg.height,
+                              tcfg.bmin, tcfg.bmax, tcfg.cs, tcfg.ch)) {
+        rcFreeHeightField(solid);
+        return 0;
+    }
+
+    std::vector<unsigned char> tri_areas(ntris, 0);
+    rcMarkWalkableTriangles(ctx, tcfg.walkableSlopeAngle, verts, nverts, tris, ntris, tri_areas.data());
+
+    if (!rcRasterizeTriangles(ctx, verts, nverts, tris, tri_areas.data(), ntris,
+                               *solid, tcfg.walkableClimb)) {
+        rcFreeHeightField(solid);
+        return 0;
+    }
+
+    if (filter_low)        rcFilterLowHangingWalkableObstacles(ctx, tcfg.walkableClimb, *solid);
+    if (filter_ledge)      rcFilterLedgeSpans(ctx, tcfg.walkableHeight, tcfg.walkableClimb, *solid);
+    if (filter_low_height) rcFilterWalkableLowHeightSpans(ctx, tcfg.walkableHeight, *solid);
+
+    rcCompactHeightfield* chf = rcAllocCompactHeightfield();
+    if (!chf) { rcFreeHeightField(solid); return 0; }
+    if (!rcBuildCompactHeightfield(ctx, tcfg.walkableHeight, tcfg.walkableClimb, *solid, *chf)) {
+        rcFreeHeightField(solid); rcFreeCompactHeightfield(chf); return 0;
+    }
+    rcFreeHeightField(solid);
+
+    if (!rcErodeWalkableArea(ctx, tcfg.walkableRadius, *chf)) {
+        rcFreeCompactHeightfield(chf); return 0;
+    }
+
+    rcHeightfieldLayerSet* lset = rcAllocHeightfieldLayerSet();
+    if (!lset) { rcFreeCompactHeightfield(chf); return 0; }
+    if (!rcBuildHeightfieldLayers(ctx, *chf, tcfg.borderSize, tcfg.walkableHeight, *lset)) {
+        rcFreeCompactHeightfield(chf); rcFreeHeightfieldLayerSet(lset); return 0;
+    }
+    rcFreeCompactHeightfield(chf);
+
+    int ntiles_out = 0;
+    for (int i = 0; i < rcMin(lset->nlayers, max_tiles); ++i) {
+        const rcHeightfieldLayer* layer = &lset->layers[i];
+
+        dtTileCacheLayerHeader header{};
+        header.magic   = DT_TILECACHE_MAGIC;
+        header.version = DT_TILECACHE_VERSION;
+        header.tx      = tile_x;
+        header.ty      = tile_y;
+        header.tlayer  = i;
+        dtVcopy(header.bmin, layer->bmin);
+        dtVcopy(header.bmax, layer->bmax);
+        header.width  = static_cast<unsigned char>(layer->width);
+        header.height = static_cast<unsigned char>(layer->height);
+        header.minx   = static_cast<unsigned char>(layer->minx);
+        header.maxx   = static_cast<unsigned char>(layer->maxx);
+        header.miny   = static_cast<unsigned char>(layer->miny);
+        header.maxy   = static_cast<unsigned char>(layer->maxy);
+        header.hmin   = static_cast<unsigned short>(layer->hmin);
+        header.hmax   = static_cast<unsigned short>(layer->hmax);
+
+        TileLayerData* out = &out_tiles[ntiles_out];
+        dtStatus st = dtBuildTileCacheLayer(
+            &comp, &header,
+            layer->heights, layer->areas, layer->cons,
+            &out->data, &out->dataSize);
+        if (dtStatusSucceed(st)) {
+            ++ntiles_out;
+        }
+    }
+    rcFreeHeightfieldLayerSet(lset);
+    return ntiles_out;
+}
+
+// ─── end TileCache helpers ────────────────────────────────────────────────────
 
 extern "C" {
 
@@ -974,6 +1189,330 @@ bool nm_crowd_sync_agent_pos(void* crowdhandle, int idx, const float* pos, const
     agent->corridor.movePosition(nearest, navquery, filter);
     agent->state = DT_CROWDAGENT_STATE_WALKING;
     return true;
+}
+
+void nm_crowd_set_obstacle_avoidance_params(void* crowdhandle, int idx, const dtObstacleAvoidanceParams* params) {
+    if (!crowdhandle || !params) return;
+    dtCrowd* crowd = static_cast<dtCrowd*>(crowdhandle);
+    crowd->setObstacleAvoidanceParams(idx, params);
+}
+
+bool nm_crowd_get_obstacle_avoidance_params(void* crowdhandle, int idx, dtObstacleAvoidanceParams* out_params) {
+    if (!crowdhandle || !out_params) return false;
+    dtCrowd* crowd = static_cast<dtCrowd*>(crowdhandle);
+    const dtObstacleAvoidanceParams* params = crowd->getObstacleAvoidanceParams(idx);
+    if (!params) return false;
+    *out_params = *params;
+    return true;
+}
+
+// ─── TileCache API ────────────────────────────────────────────────────────────
+
+// Build a tiled navmesh + tile cache from an OBJ file.
+// tile_size: voxels per tile edge (32-64 typical).
+// max_obstacles: maximum simultaneous obstacles in the tile cache pool.
+// Returns an opaque TileCacheHandle* or nullptr on failure.
+void* nm_build_tiled_with_cache(
+    const char*            obj_path,
+    const nmBuildSettings* settings,
+    int                    input_is_z_up,
+    int                    tile_size,
+    int                    max_obstacles,
+    char*                  error_out,
+    int                    error_out_len
+) {
+    if (!obj_path || !settings || tile_size < 1 || max_obstacles < 1) {
+        set_error(error_out, error_out_len, "Invalid arguments to nm_build_tiled_with_cache.");
+        return nullptr;
+    }
+
+    ObjMesh mesh_data;
+    if (!load_obj_mesh(obj_path, input_is_z_up != 0, mesh_data, error_out, error_out_len))
+        return nullptr;
+
+    const float* verts = mesh_data.verts.data();
+    const int    nverts = static_cast<int>(mesh_data.verts.size() / 3);
+    const int*   tris  = mesh_data.tris.data();
+    const int    ntris = static_cast<int>(mesh_data.tris.size() / 3);
+
+    float bmin[3], bmax[3];
+    calc_bounds(mesh_data.verts, bmin, bmax);
+
+    float cs  = settings->cellSize;
+    float ch  = settings->cellHeight;
+
+    // Per-tile grid dimensions
+    int gw = 0, gh = 0;
+    rcCalcGridSize(bmin, bmax, cs, &gw, &gh);
+    const int tw = (gw + tile_size - 1) / tile_size;
+    const int th = (gh + tile_size - 1) / tile_size;
+
+    // Tile ref bits
+    const int EXPECTED_LAYERS = 4;
+    int tileBits = dtIlog2(dtNextPow2(tw * th * EXPECTED_LAYERS));
+    if (tileBits > 14) tileBits = 14;
+    const int polyBits        = 22 - tileBits;
+    const int maxTiles        = 1 << tileBits;
+    const int maxPolysPerTile = 1 << polyBits;
+
+    // Build rcConfig for per-tile rasterization
+    rcConfig cfg{};
+    cfg.cs                   = cs;
+    cfg.ch                   = ch;
+    cfg.walkableSlopeAngle   = settings->agentMaxSlope;
+    cfg.walkableHeight       = static_cast<int>(std::ceil(settings->agentHeight / ch));
+    cfg.walkableClimb        = static_cast<int>(std::floor(settings->agentMaxClimb / ch));
+    cfg.walkableRadius       = static_cast<int>(std::ceil(settings->agentRadius / cs));
+    cfg.maxEdgeLen           = static_cast<int>(settings->edgeMaxLen / cs);
+    cfg.maxSimplificationError = settings->edgeMaxError;
+    cfg.minRegionArea        = static_cast<int>(rcSqr(settings->regionMinSize));
+    cfg.mergeRegionArea      = static_cast<int>(rcSqr(settings->regionMergeSize));
+    cfg.maxVertsPerPoly      = settings->vertsPerPoly;
+    cfg.detailSampleDist     = settings->detailSampleDist < 0.9f ? 0.0f : cs * settings->detailSampleDist;
+    cfg.detailSampleMaxError = ch * settings->detailSampleMaxError;
+    cfg.tileSize             = tile_size;
+    cfg.borderSize           = cfg.walkableRadius + 3;  // padding to prevent edge artefacts
+    cfg.width                = cfg.tileSize + cfg.borderSize * 2;
+    cfg.height               = cfg.tileSize + cfg.borderSize * 2;
+    rcVcopy(cfg.bmin, bmin);
+    rcVcopy(cfg.bmax, bmax);
+
+    // Allocate subobjects owned by the handle
+    auto* alloc    = new TCLinearAllocator(32 * 1024);
+    auto* comp     = new TCFastLZCompressor();
+    auto* meshproc = new TCSimpleMeshProcess();
+
+    // Init tile cache
+    dtTileCacheParams tcparams{};
+    rcVcopy(tcparams.orig, bmin);
+    tcparams.cs                   = cs;
+    tcparams.ch                   = ch;
+    tcparams.width                = tile_size;
+    tcparams.height               = tile_size;
+    tcparams.walkableHeight       = settings->agentHeight;
+    tcparams.walkableRadius       = settings->agentRadius;
+    tcparams.walkableClimb        = settings->agentMaxClimb;
+    tcparams.maxSimplificationError = settings->edgeMaxError;
+    tcparams.maxTiles             = tw * th * EXPECTED_LAYERS;
+    tcparams.maxObstacles         = static_cast<int>(max_obstacles);
+
+    dtTileCache* tc = dtAllocTileCache();
+    if (!tc) {
+        set_error(error_out, error_out_len, "Could not allocate dtTileCache.");
+        delete alloc; delete comp; delete meshproc;
+        return nullptr;
+    }
+    if (dtStatusFailed(tc->init(&tcparams, alloc, comp, meshproc))) {
+        set_error(error_out, error_out_len, "dtTileCache::init failed.");
+        dtFreeTileCache(tc); delete alloc; delete comp; delete meshproc;
+        return nullptr;
+    }
+
+    // Init navmesh
+    dtNavMeshParams nmparams{};
+    rcVcopy(nmparams.orig, bmin);
+    nmparams.tileWidth  = static_cast<float>(tile_size) * cs;
+    nmparams.tileHeight = static_cast<float>(tile_size) * cs;
+    nmparams.maxTiles   = maxTiles;
+    nmparams.maxPolys   = maxPolysPerTile;
+
+    dtNavMesh* nav = dtAllocNavMesh();
+    if (!nav) {
+        set_error(error_out, error_out_len, "Could not allocate dtNavMesh.");
+        dtFreeTileCache(tc); delete alloc; delete comp; delete meshproc;
+        return nullptr;
+    }
+    if (dtStatusFailed(nav->init(&nmparams))) {
+        set_error(error_out, error_out_len, "dtNavMesh::init failed.");
+        dtFreeNavMesh(nav); dtFreeTileCache(tc); delete alloc; delete comp; delete meshproc;
+        return nullptr;
+    }
+
+    // Rasterize all tiles and populate tile cache
+    MinimalRecastContext ctx_wrap;
+    rcContext* ctx = &ctx_wrap.ctx;
+
+    bool filter_low   = settings->filterLowHangingObstacles != 0;
+    bool filter_ledge = settings->filterLedgeSpans != 0;
+    bool filter_lowhgt = settings->filterWalkableLowHeightSpans != 0;
+
+    for (int ty = 0; ty < th; ++ty) {
+        for (int tx = 0; tx < tw; ++tx) {
+            TileLayerData layers[TC_MAX_LAYERS]{};
+            int nlayers = rasterize_tile_layers(
+                ctx, verts, nverts, tris, ntris,
+                cfg, filter_low, filter_ledge, filter_lowhgt,
+                tx, ty, layers, TC_MAX_LAYERS);
+
+            for (int i = 0; i < nlayers; ++i) {
+                dtStatus st = tc->addTile(
+                    layers[i].data, layers[i].dataSize,
+                    DT_COMPRESSEDTILE_FREE_DATA, nullptr);
+                if (dtStatusFailed(st)) {
+                    dtFree(layers[i].data);
+                    layers[i].data = nullptr;
+                }
+            }
+        }
+    }
+
+    // Build initial navmesh tiles from cache
+    for (int ty = 0; ty < th; ++ty)
+        for (int tx = 0; tx < tw; ++tx)
+            tc->buildNavMeshTilesAt(tx, ty, nav);
+
+    auto* handle    = new TileCacheHandle();
+    handle->tc      = tc;
+    handle->nav     = nav;
+    handle->alloc   = alloc;
+    handle->comp    = comp;
+    handle->meshproc = meshproc;
+
+    set_error(error_out, error_out_len, "");
+    return handle;
+}
+
+int nm_tc_save(void* tc_handle, const char* path) {
+    if (!tc_handle || !path) return -1;
+    auto* h = static_cast<TileCacheHandle*>(tc_handle);
+
+    FILE* fp = fopen(path, "wb");
+    if (!fp) return -1;
+
+    TileCacheSetHeader header{};
+    header.magic   = TILECACHESET_MAGIC;
+    header.version = TILECACHESET_VERSION;
+    header.numTiles = 0;
+    for (int i = 0; i < h->tc->getTileCount(); ++i) {
+        const dtCompressedTile* t = h->tc->getTile(i);
+        if (t && t->header && t->dataSize > 0) ++header.numTiles;
+    }
+    std::memcpy(&header.cacheParams, h->tc->getParams(), sizeof(dtTileCacheParams));
+    std::memcpy(&header.meshParams,  h->nav->getParams(), sizeof(dtNavMeshParams));
+
+    if (fwrite(&header, sizeof(header), 1, fp) != 1) { fclose(fp); return -1; }
+
+    for (int i = 0; i < h->tc->getTileCount(); ++i) {
+        const dtCompressedTile* t = h->tc->getTile(i);
+        if (!t || !t->header || t->dataSize <= 0) continue;
+        TileCacheTileHeader th{};
+        th.tileRef  = h->tc->getTileRef(t);
+        th.dataSize = t->dataSize;
+        if (fwrite(&th, sizeof(th), 1, fp) != 1) { fclose(fp); return -1; }
+        if (fwrite(t->data, static_cast<size_t>(t->dataSize), 1, fp) != 1) { fclose(fp); return -1; }
+    }
+    fclose(fp);
+    return 0;
+}
+
+void* nm_tc_load(const char* path) {
+    if (!path) return nullptr;
+    FILE* fp = fopen(path, "rb");
+    if (!fp) return nullptr;
+
+    TileCacheSetHeader header{};
+    if (fread(&header, sizeof(header), 1, fp) != 1) { fclose(fp); return nullptr; }
+    if (header.magic != TILECACHESET_MAGIC || header.version != TILECACHESET_VERSION) {
+        fclose(fp); return nullptr;
+    }
+
+    auto* alloc    = new TCLinearAllocator(32 * 1024);
+    auto* comp     = new TCFastLZCompressor();
+    auto* meshproc = new TCSimpleMeshProcess();
+
+    dtNavMesh* nav = dtAllocNavMesh();
+    if (!nav || dtStatusFailed(nav->init(&header.meshParams))) {
+        if (nav) dtFreeNavMesh(nav);
+        delete alloc; delete comp; delete meshproc;
+        fclose(fp); return nullptr;
+    }
+
+    dtTileCache* tc = dtAllocTileCache();
+    if (!tc || dtStatusFailed(tc->init(&header.cacheParams, alloc, comp, meshproc))) {
+        if (tc) dtFreeTileCache(tc);
+        dtFreeNavMesh(nav); delete alloc; delete comp; delete meshproc;
+        fclose(fp); return nullptr;
+    }
+
+    for (int i = 0; i < header.numTiles; ++i) {
+        TileCacheTileHeader th{};
+        if (fread(&th, sizeof(th), 1, fp) != 1) break;
+        if (!th.tileRef || !th.dataSize) break;
+
+        unsigned char* data = static_cast<unsigned char*>(dtAlloc(th.dataSize, DT_ALLOC_PERM));
+        if (!data) break;
+        std::memset(data, 0, static_cast<size_t>(th.dataSize));
+        if (fread(data, static_cast<size_t>(th.dataSize), 1, fp) != 1) {
+            dtFree(data); break;
+        }
+
+        dtCompressedTileRef tile_ref = 0;
+        dtStatus st = tc->addTile(data, th.dataSize, DT_COMPRESSEDTILE_FREE_DATA, &tile_ref);
+        if (dtStatusFailed(st)) {
+            dtFree(data);
+            continue;
+        }
+        if (tile_ref) tc->buildNavMeshTile(tile_ref, nav);
+    }
+
+    fclose(fp);
+
+    auto* handle     = new TileCacheHandle();
+    handle->tc       = tc;
+    handle->nav      = nav;
+    handle->alloc    = alloc;
+    handle->comp     = comp;
+    handle->meshproc = meshproc;
+    return handle;
+}
+
+void nm_tc_free(void* tc_handle) {
+    if (!tc_handle) return;
+    auto* h = static_cast<TileCacheHandle*>(tc_handle);
+    if (h->tc)  dtFreeTileCache(h->tc);
+    if (h->nav) dtFreeNavMesh(h->nav);
+    delete h->alloc;
+    delete h->comp;
+    delete h->meshproc;
+    delete h;
+}
+
+// Returns the dtNavMesh* inside the handle. Lifetime owned by the handle.
+void* nm_tc_get_navmesh(void* tc_handle) {
+    if (!tc_handle) return nullptr;
+    return static_cast<TileCacheHandle*>(tc_handle)->nav;
+}
+
+// Add a cylinder obstacle. pos[3] is Y-up; pos[1] is the BASE (bottom face) of the cylinder.
+// Returns obstacle ref (non-zero) on success, 0 on failure.
+uint32_t nm_tc_add_cylinder(void* tc_handle, const float* pos, float radius, float height) {
+    if (!tc_handle || !pos) return 0;
+    auto* h = static_cast<TileCacheHandle*>(tc_handle);
+    dtObstacleRef ref = 0;
+    dtStatus st = h->tc->addObstacle(pos, radius, height, &ref);
+    if (dtStatusFailed(st)) return 0;
+    return static_cast<uint32_t>(ref);
+}
+
+void nm_tc_remove_obstacle(void* tc_handle, uint32_t ref) {
+    if (!tc_handle || ref == 0) return;
+    static_cast<TileCacheHandle*>(tc_handle)->tc->removeObstacle(
+        static_cast<dtObstacleRef>(ref));
+}
+
+// Rebuild tiles touched by pending obstacle requests.
+// upToDate_out is set to 1 when no more pending work remains.
+void nm_tc_update(void* tc_handle, float dt, int* upToDate_out) {
+    if (!tc_handle) return;
+    auto* h = static_cast<TileCacheHandle*>(tc_handle);
+    bool upToDate = false;
+    h->tc->update(dt, h->nav, &upToDate);
+    if (upToDate_out) *upToDate_out = upToDate ? 1 : 0;
+}
+
+int nm_tc_tile_count(void* tc_handle) {
+    if (!tc_handle) return 0;
+    return nm_tile_count(static_cast<TileCacheHandle*>(tc_handle)->nav);
 }
 
 }  // extern "C"

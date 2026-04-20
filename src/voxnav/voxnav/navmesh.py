@@ -13,7 +13,9 @@ from ._bridge_loader import load_bridge_lib
 from ._ctypes_bindings import bind_navmesh_symbols
 from .crowd import Crowd as _Crowd
 from .navmesh_core import NavMesh as _NavMesh
+from .navmesh_core import NavMeshRaw as _NavMeshRaw
 from .navmesh_query import NavMeshQuery as _NavMeshQuery
+from .tile_cache import TileCache as _TileCache
 
 _BOUND = bind_navmesh_symbols(load_bridge_lib())
 _LIB = _BOUND.lib
@@ -35,8 +37,25 @@ class Crowd(_Crowd):
             navmesh=navmesh,
             lib=_LIB,
             crowd_params_type=_BOUND.dt_crowd_agent_params,
+            obstacle_avoidance_params_type=_BOUND.dt_obstacle_avoidance_params,
             max_agents=max_agents,
             max_agent_radius=max_agent_radius,
+        )
+
+
+class TileCache(_TileCache):
+    def __init__(self, *, tcbin_path=None, obj_path=None,
+                 settings=None, tile_size=32, max_obstacles=256,
+                 input_is_z_up=True):
+        super().__init__(
+            lib=_LIB,
+            bound=_BOUND,
+            tcbin_path=tcbin_path,
+            obj_path=obj_path,
+            settings=settings,
+            tile_size=tile_size,
+            max_obstacles=max_obstacles,
+            input_is_z_up=input_is_z_up,
         )
 
 
@@ -44,6 +63,7 @@ class Crowd(_Crowd):
 class NavRuntime:
     lib: object
     crowd_params_type: type
+    obstacle_avoidance_params_type: type
 
     def navmesh(self, bin_path: str) -> _NavMesh:
         return _NavMesh(bin_path=bin_path, lib=self.lib)
@@ -56,13 +76,18 @@ class NavRuntime:
             navmesh=navmesh,
             lib=self.lib,
             crowd_params_type=self.crowd_params_type,
+            obstacle_avoidance_params_type=self.obstacle_avoidance_params_type,
             max_agents=max_agents,
             max_agent_radius=max_agent_radius,
         )
 
 
 def create_runtime() -> NavRuntime:
-    return NavRuntime(lib=_LIB, crowd_params_type=_BOUND.dt_crowd_agent_params)
+    return NavRuntime(
+        lib=_LIB, 
+        crowd_params_type=_BOUND.dt_crowd_agent_params,
+        obstacle_avoidance_params_type=_BOUND.dt_obstacle_avoidance_params
+    )
 
 
-__all__ = ["NavMesh", "NavMeshQuery", "Crowd", "NavRuntime", "create_runtime"]
+__all__ = ["NavMesh", "NavMeshQuery", "Crowd", "TileCache", "NavRuntime", "create_runtime"]

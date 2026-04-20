@@ -39,25 +39,25 @@ def generate_launch_description():
     
     max_linear_speed_arg = DeclareLaunchArgument(
         'max_linear_speed',
-        default_value='2.0',
+        default_value='8.0',
         description='Maximum linear velocity (m/s)'
     )
     
     max_angular_speed_arg = DeclareLaunchArgument(
         'max_angular_speed',
-        default_value='5.5',
+        default_value='8.0',
         description='Maximum angular velocity (rad/s)'
     )
     
     update_rate_arg = DeclareLaunchArgument(
         'update_rate',
-        default_value='30.0',
+        default_value='60.0',
         description='Simulation update rate (Hz)'
     )
 
     robot_radius_arg = DeclareLaunchArgument(
         'robot_radius',
-        default_value='0.5',
+        default_value='0.6',
         description='Physical radius of the robot (m) — used for crowd avoidance'
     )
 
@@ -69,31 +69,31 @@ def generate_launch_description():
 
     dyn_obstacle_decay_ms_arg = DeclareLaunchArgument(
         'dyn_obstacle_decay_ms',
-        default_value='1500',
+        default_value='5500',
         description='Ghost/decay time for dynamic obstacles (ms)'
     )
 
     dyn_obstacle_voxel_m_arg = DeclareLaunchArgument(
         'dyn_obstacle_voxel_m',
-        default_value='0.01',
+        default_value='0.2',
         description='Voxel grid cell size for obstacle clustering (m)'
     )
 
     dyn_obstacle_height_arg = DeclareLaunchArgument(
         'dyn_obstacle_height',
-        default_value='1.0',
+        default_value='0.2',
         description='Agent height for each dynamic obstacle (m)'
     )
 
     dyn_obstacle_radius_arg = DeclareLaunchArgument(
         'dyn_obstacle_radius',
-        default_value='0.3',
+        default_value='0.6',
         description='Crowd agent radius for each dynamic obstacle (m)'
     )
 
     dyn_obstacle_max_arg = DeclareLaunchArgument(
         'dyn_obstacle_max',
-        default_value='500',
+        default_value='1000',
         description='Maximum simultaneous dynamic obstacle agents'
     )
 
@@ -113,7 +113,7 @@ def generate_launch_description():
     
     # Resolve installed script path
     pkg_prefix = get_package_prefix('voxnav')
-    script_path = os.path.join(pkg_prefix, 'bin', 'simulate_crowd_cosim.py')
+    script_path = os.path.join(pkg_prefix, 'lib', 'voxnav', 'simulate_crowd_cosim.py')
     
     # Build command with ROS parameters
     cmd = [

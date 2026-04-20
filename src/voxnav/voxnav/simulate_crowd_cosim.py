@@ -128,7 +128,8 @@ class DynamicObstacleManager:
                             height=self._height,
                             maxAcceleration=0.0,
                             maxSpeed=0.0,
-                            collisionQueryRange=self._radius * 2,
+                            collisionQueryRange=self._radius * 0,
+                            obstacleWeight=0.0,  # 0.0 means active agents take 100% responsibility to avoid it
                         )
                         self._agents[agent_id] = {
                             "pos_zup": pt,
@@ -141,7 +142,7 @@ class DynamicObstacleManager:
 
         # Keep active agents strictly situated (for safety within DetourCrowd tracking)
         for agent_id, data in self._agents.items():
-            self._crowd.teleport_agent(agent_id, data["pos_zup"])
+            self._crowd.force_agent_pos(agent_id, data["pos_zup"])
 
     def _remove_agent(self, agent_id):
         data = self._agents.pop(agent_id, None)
@@ -221,6 +222,7 @@ class CrowdCosimNode(Node):
             "robot_heading": 0.0,  # Yaw angle
             "dyn_points": None,  # Latest foreground cloud (Nx3 float32, Z-up)
             "dyn_obs_positions": [],  # Z-up positions of active dynamic obstacle agents
+            "robot_vel": None,   # Velocity vector from Recast
         }
         
         # Recast/Detour objects
@@ -323,7 +325,7 @@ class CrowdCosimNode(Node):
                 self.state["obs_y"],
                 self.state["obs_z"]
             ])
-            self.crowd.teleport_agent(self.obs_id, obs_pos)
+            self.crowd.force_agent_pos(self.obs_id, obs_pos)
             
             # Handle target changes from GUI
             if self.state["force_target"]:
@@ -381,12 +383,14 @@ class CrowdCosimNode(Node):
         # Get steering velocity and publish cmd_vel
         pos, vel = self.crowd.get_agent_pos(self.robot_id)
         if vel is not None and pos is not None:
+            with self.state_lock:
+                self.state["robot_vel"] = vel
             cmd_vel = self.compute_cmd_vel(vel)
             self.cmd_vel_pub.publish(cmd_vel)
     
     def compute_cmd_vel(self, recast_vel):
         """
-        Transform Recast velocity vector to Twist cmd_vel.
+        Transform Recast velocity vector to Twist cmd_vel using Power Cosine Gating.
         
         Args:
             recast_vel: 3D velocity vector [vx, vy, vz] from Recast
@@ -397,34 +401,43 @@ class CrowdCosimNode(Node):
         cmd_vel = Twist()
         
         if recast_vel is None or np.linalg.norm(recast_vel) < 1e-4:
-            # No velocity, stop
             return cmd_vel
         
+        # --- Configuration ---
+        # Increase power_factor to make the robot more "strict" (less arcing)
+        # 1.0 = Standard Cosine (Wide arcs)
+        # 4.0 = Sharp (Typical for indoor)
+        # 8.0 = Very Strict (Almost turns in place before moving)
+        power_factor = 4.0 
+
         with self.state_lock:
             current_heading = self.state["robot_heading"]
         
         # Compute desired heading from velocity vector
-        vel_x, vel_y, vel_z = recast_vel
+        vel_x, vel_y, _ = recast_vel
         desired_heading = math.atan2(vel_y, vel_x)
         
         # Compute angular error (normalized to [-pi, pi])
         angular_error = self.normalize_angle(desired_heading - current_heading)
         
-        # P-controller for angular velocity
+        # 1. Angular Velocity (P-Controller)
         angular_vel = self.kp_angular * angular_error
         angular_vel = np.clip(angular_vel, -self.max_angular_speed, self.max_angular_speed)
         
-        # Linear velocity scaled by heading alignment: spins in place when misaligned,
-        # ramps to full speed as the robot aligns with the desired heading.
+        # 2. Linear Velocity with Power Cosine Gating
         speed = math.sqrt(vel_x**2 + vel_y**2)
         speed = min(speed, self.max_linear_speed)
-        linear_vel = speed * max(0.0, math.cos(angular_error))
+        
+        # Calculate alignment factor (0.0 to 1.0)
+        # max(0.0, ...) ensures we don't move backward if the target is behind us
+        alignment = max(0.0, math.cos(angular_error))
+        
+        # Apply the power rule to sharpen the drop-off
+        strict_gating = math.pow(alignment, power_factor)
+        linear_vel = speed * strict_gating
 
+        # 3. Populate Twist Message
         cmd_vel.linear.x = linear_vel
-        cmd_vel.linear.y = 0.0
-        cmd_vel.linear.z = 0.0
-        cmd_vel.angular.x = 0.0
-        cmd_vel.angular.y = 0.0
         cmd_vel.angular.z = angular_vel
         
         return cmd_vel
@@ -446,6 +459,17 @@ class CrowdCosimNode(Node):
         max_agents = 2 + self.dyn_max_obstacles
         self.crowd = Crowd(self.nm, max_agents=max_agents, max_agent_radius=0.5)
         
+        # Load profile 3 (Good quality default), modify it, and save to slot 4
+        # to create a "Robot Profile" that looks further ahead for dynamic obstacles
+        robot_profile = self.crowd.get_obstacle_avoidance_params(3)
+        if robot_profile is not None:
+            robot_profile.horizTime = 2.5  # Default is often 2.5
+            robot_profile.weightToi = 2.0  # Penalize imminent collisions heavily
+            robot_profile.weightDesVel = 2.8 # Prioritize moving to target
+            robot_profile.weightSide = 1.1
+            robot_profile.weightCurVel = 2.5
+            self.crowd.set_obstacle_avoidance_params(4, robot_profile)
+
         # Find reasonable start and end positions
         start_pos = np.array([-4.0, 0.0, 0.0])
         end_pos = np.array([4.0, 0.0, 0.0])
@@ -465,14 +489,17 @@ class CrowdCosimNode(Node):
         
         # Add robot agent (position will be updated from /robotPose)
         # _robot_cqr = max(3.0, self.dyn_radius * 4.0 + self.robot_radius * 2)
+        
         self.robot_id = self.crowd.add_agent(
             start_pos,
             radius=self.robot_radius,
-            maxAcceleration=8.0,
+            maxAcceleration=12.0,
             maxSpeed=float(self.max_linear_speed),
-            collisionQueryRange=2.5,
-            separationWeight=2.0,
+            collisionQueryRange=12.0,
+            separationWeight=0.0,
+            obstacleWeight=1.0,
             updateFlags=1 | 2 | 4 | 8 | 16,
+            obstacleAvoidanceType=3  # Use our custom "Robot Profile" defined in slot 4
         )
         
         # Add obstacle agent
@@ -485,7 +512,8 @@ class CrowdCosimNode(Node):
             obs_pos,
             radius=0.6,
             maxAcceleration=0.0,
-            maxSpeed=0.0
+            maxSpeed=0.0,
+            obstacleWeight=0.0
         )
         
         if self.dyn_source == 'cloud':
@@ -725,6 +753,12 @@ def main():
         obs_mesh.compute_vertex_normals()
         vis.add_geometry(obs_mesh)
 
+        # Velocity arrow mesh (cyan)
+        vel_arrow_mesh = o3d.geometry.TriangleMesh.create_arrow()
+        vel_arrow_mesh.paint_uniform_color([0.0, 1.0, 1.0])
+        vel_arrow_mesh.compute_vertex_normals()
+        vis.add_geometry(vel_arrow_mesh)
+
         # Dynamic obstacle pool: pre-allocate N orange cylinders, hidden below navmesh floor when inactive.
         # Using a position within XY bounds of the navmesh avoids expanding the O3D scene bounding box
         # (which would make scroll zoom sensitivity enormous).
@@ -774,6 +808,7 @@ def main():
             # Update robot position in visualization
             with node.state_lock:
                 robot_pos = node.state["robot_pos"]
+                robot_vel = node.state["robot_vel"]
                 target_pos = np.array([
                     node.state["target_x"],
                     node.state["target_y"],
@@ -789,6 +824,34 @@ def main():
                 robot_mesh.vertices = o3d.geometry.TriangleMesh.create_sphere(radius=0.3).vertices
                 robot_mesh.translate(robot_pos)
                 vis.update_geometry(robot_mesh)
+
+            if robot_vel is not None and robot_pos is not None:
+                speed = np.linalg.norm(robot_vel)
+                if speed > 0.05:
+                    _arrow = o3d.geometry.TriangleMesh.create_arrow(
+                        cylinder_radius=0.05, cone_radius=0.1, cylinder_height=speed, cone_height=0.2
+                    )
+                    v_norm = robot_vel / speed
+                    z_axis = np.array([0.0, 0.0, 1.0])
+                    axis = np.cross(z_axis, v_norm)
+                    axis_norm = np.linalg.norm(axis)
+                    if axis_norm > 1e-6:
+                        axis = axis / axis_norm
+                        angle = np.arccos(np.clip(np.dot(z_axis, v_norm), -1.0, 1.0))
+                        R = _arrow.get_rotation_matrix_from_axis_angle(axis * angle)
+                        _arrow.rotate(R, center=(0, 0, 0))
+                    elif np.dot(z_axis, v_norm) < 0:
+                        R = _arrow.get_rotation_matrix_from_axis_angle(np.array([1.0, 0.0, 0.0]) * np.pi)
+                        _arrow.rotate(R, center=(0, 0, 0))
+                    
+                    _arrow.translate(robot_pos)
+                    vel_arrow_mesh.vertices = _arrow.vertices
+                else:
+                    _arrow = o3d.geometry.TriangleMesh.create_arrow()
+                    _arrow.translate(_HIDDEN)
+                    vel_arrow_mesh.vertices = _arrow.vertices
+                
+                vis.update_geometry(vel_arrow_mesh)
             
             # Update target mesh
             target_mesh.vertices = o3d.geometry.TriangleMesh.create_sphere(radius=0.1).vertices

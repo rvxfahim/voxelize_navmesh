@@ -172,7 +172,7 @@ def main():
         agent_id = crowd.add_agent(start_pos, radius=0.3, maxAcceleration=8.0, maxSpeed=2.0, collisionQueryRange=2.0)
 
         obs_pos = np.array([state["obs_x"], state["obs_y"], state["obs_z"]]) 
-        obs_id = crowd.add_agent(obs_pos, radius=0.6, maxAcceleration=0.0, maxSpeed=0.0)
+        obs_id = crowd.add_agent(obs_pos, radius=0.6, maxAcceleration=0.0, maxSpeed=0.0, obstacleWeight=0.0)
 
         # Tk must be initialized from the main thread.
         root = create_gui(bmin, bmax)

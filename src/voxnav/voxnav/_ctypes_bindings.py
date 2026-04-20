@@ -33,10 +33,26 @@ class dtCrowdAgentParams(ctypes.Structure):
         ("collisionQueryRange", ctypes.c_float),
         ("pathOptimizationRange", ctypes.c_float),
         ("separationWeight", ctypes.c_float),
+        ("obstacleWeight", ctypes.c_float),
         ("updateFlags", ctypes.c_ubyte),
         ("obstacleAvoidanceType", ctypes.c_ubyte),
         ("queryFilterType", ctypes.c_ubyte),
         ("userData", ctypes.c_void_p),
+    ]
+
+
+class dtObstacleAvoidanceParams(ctypes.Structure):
+    _fields_ = [
+        ("velBias", ctypes.c_float),
+        ("weightDesVel", ctypes.c_float),
+        ("weightCurVel", ctypes.c_float),
+        ("weightSide", ctypes.c_float),
+        ("weightToi", ctypes.c_float),
+        ("horizTime", ctypes.c_float),
+        ("gridSize", ctypes.c_ubyte),
+        ("adaptiveDivs", ctypes.c_ubyte),
+        ("adaptiveRings", ctypes.c_ubyte),
+        ("adaptiveDepth", ctypes.c_ubyte),
     ]
 
 
@@ -45,6 +61,7 @@ class BoundNavmeshLib:
     lib: ctypes.CDLL
     dt_crowd_agent_params: type
     build_settings_type: type
+    dt_obstacle_avoidance_params: type
 
 
 def bind_navmesh_symbols(lib: ctypes.CDLL) -> BoundNavmeshLib:
@@ -161,4 +178,64 @@ def bind_navmesh_symbols(lib: ctypes.CDLL) -> BoundNavmeshLib:
         ctypes.POINTER(ctypes.c_float),   # half_extents (nullable)
     ]
 
-    return BoundNavmeshLib(lib=lib, dt_crowd_agent_params=dtCrowdAgentParams, build_settings_type=nmBuildSettings)
+    lib.nm_crowd_set_obstacle_avoidance_params.restype = None
+    lib.nm_crowd_set_obstacle_avoidance_params.argtypes = [
+        ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(dtObstacleAvoidanceParams)
+    ]
+
+    lib.nm_crowd_get_obstacle_avoidance_params.restype = ctypes.c_bool
+    lib.nm_crowd_get_obstacle_avoidance_params.argtypes = [
+        ctypes.c_void_p, ctypes.c_int, ctypes.POINTER(dtObstacleAvoidanceParams)
+    ]
+
+    # --- TileCache build / persistence ---
+    lib.nm_build_tiled_with_cache.restype = ctypes.c_void_p
+    lib.nm_build_tiled_with_cache.argtypes = [
+        ctypes.c_char_p,                  # obj_path
+        ctypes.POINTER(nmBuildSettings),  # settings
+        ctypes.c_int,                     # input_is_z_up
+        ctypes.c_int,                     # tile_size
+        ctypes.c_int,                     # max_obstacles
+        ctypes.c_char_p,                  # error_out
+        ctypes.c_int,                     # error_out_len
+    ]
+
+    lib.nm_tc_save.restype = ctypes.c_int
+    lib.nm_tc_save.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+
+    lib.nm_tc_load.restype = ctypes.c_void_p
+    lib.nm_tc_load.argtypes = [ctypes.c_char_p]
+
+    lib.nm_tc_free.restype = None
+    lib.nm_tc_free.argtypes = [ctypes.c_void_p]
+
+    lib.nm_tc_get_navmesh.restype = ctypes.c_void_p
+    lib.nm_tc_get_navmesh.argtypes = [ctypes.c_void_p]
+
+    lib.nm_tc_add_cylinder.restype = ctypes.c_uint32
+    lib.nm_tc_add_cylinder.argtypes = [
+        ctypes.c_void_p,                      # tc_handle
+        ctypes.POINTER(ctypes.c_float),        # pos[3] Y-up base position
+        ctypes.c_float,                        # radius
+        ctypes.c_float,                        # height
+    ]
+
+    lib.nm_tc_remove_obstacle.restype = None
+    lib.nm_tc_remove_obstacle.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
+
+    lib.nm_tc_update.restype = None
+    lib.nm_tc_update.argtypes = [
+        ctypes.c_void_p,               # tc_handle
+        ctypes.c_float,                # dt
+        ctypes.POINTER(ctypes.c_int),  # upToDate_out (nullable)
+    ]
+
+    lib.nm_tc_tile_count.restype = ctypes.c_int
+    lib.nm_tc_tile_count.argtypes = [ctypes.c_void_p]
+
+    return BoundNavmeshLib(
+        lib=lib, 
+        dt_crowd_agent_params=dtCrowdAgentParams, 
+        build_settings_type=nmBuildSettings,
+        dt_obstacle_avoidance_params=dtObstacleAvoidanceParams
+    )
