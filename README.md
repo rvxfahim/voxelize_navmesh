@@ -1,6 +1,6 @@
 # voxelize_navmesh
 
-<video src="3DNav.mp4" controls width="720"></video>
+<video src="https://github.com/rvxfahim/voxelize_navmesh/raw/refs/heads/bugfix/cmd_vel_0/3DNav.mp4" controls width="720"></video>
 
 ROS2 workspace with Recast/Detour as a pinned submodule. The primary feature is
 tile-cache dynamic obstacle avoidance: detected point-cloud clusters are fitted
