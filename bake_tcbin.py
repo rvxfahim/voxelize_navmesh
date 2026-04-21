@@ -52,7 +52,7 @@ def main():
                         help="Voxel cell size (metres)")
     parser.add_argument("--cell-height", type=float, default=0.1,
                         help="Voxel cell height (metres)")
-    parser.add_argument("--agent-height", type=float, default=1.0,
+    parser.add_argument("--agent-height", type=float, default=0.5,
                         help="Agent height (metres)")
     parser.add_argument("--agent-radius", type=float, default=0.3,
                         help="Agent radius (metres)")

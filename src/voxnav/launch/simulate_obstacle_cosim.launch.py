@@ -117,7 +117,7 @@ def generate_launch_description():
 
     obstacle_decay_s_arg = DeclareLaunchArgument(
         'obstacle_decay_s',
-        default_value='5.5',
+        default_value='0.5',
         description='Seconds to keep an obstacle after it disappears from the point cloud'
     )
 
