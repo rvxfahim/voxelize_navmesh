@@ -1,0 +1,468 @@
+Panels:
+  - Class: rviz_common/Displays
+    Help Height: 78
+    Name: Displays
+    Property Tree Widget:
+      Expanded:
+        - /Global Options1
+        - /Status1
+        - /PointCloud2 (downsampled /voxelized_cloud)1/Topic1
+      Splitter Ratio: 0.5689277648925781
+    Tree Height: 235
+  - Class: rviz_common/Selection
+    Name: Selection
+  - Class: rviz_common/Tool Properties
+    Expanded:
+      - /Publish Point1
+    Name: Tool Properties
+    Splitter Ratio: 0.588679313659668
+  - Class: rviz_common/Views
+    Expanded:
+      - /Current View1
+    Name: Views
+    Splitter Ratio: 0.5
+Visualization Manager:
+  Class: ""
+  Displays:
+    - Alpha: 0.5
+      Cell Size: 1
+      Class: rviz_default_plugins/Grid
+      Color: 160; 160; 164
+      Enabled: true
+      Line Style:
+        Line Width: 0.029999999329447746
+        Value: Lines
+      Name: Grid
+      Normal Cell Count: 0
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0
+      Plane: XY
+      Plane Cell Count: 20
+      Reference Frame: <Fixed Frame>
+      Value: true
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 200; 200; 200
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: false
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 4096
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2 (raw /hesai/pandar)
+      Position Transformer: XYZ
+      Selectable: false
+      Size (Pixels): 1
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /front_3d_lidar/lidar_points
+      Use Fixed Frame: true
+      Use rainbow: false
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 10
+        Min Value: -10
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 0; 255; 100
+      Color Transformer: Intensity
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 255; 255
+      Max Intensity: 0
+      Min Color: 0; 0; 0
+      Min Intensity: 0
+      Name: PointCloud2 (downsampled /voxelized_cloud)
+      Position Transformer: XYZ
+      Selectable: false
+      Size (Pixels): 3
+      Size (m): 0.009999999776482582
+      Style: Points
+      Topic:
+        Depth: 10
+        Durability Policy: Transient Local
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initial_map
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: false
+      Name: Voxel Cubes (/voxel_markers) — full scan
+      Namespaces:
+        {}
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /voxel_markers
+      Value: false
+    - Alpha: 1
+      Autocompute Intensity Bounds: true
+      Autocompute Value Bounds:
+        Max Value: 1.4449999332427979
+        Min Value: -1.1449999809265137
+        Value: true
+      Axis: Z
+      Channel Name: intensity
+      Class: rviz_default_plugins/PointCloud2
+      Color: 255; 80; 0
+      Color Transformer: AxisColor
+      Decay Time: 0
+      Enabled: true
+      Invert Rainbow: false
+      Max Color: 255; 0; 0
+      Max Intensity: 4096
+      Min Color: 0; 100; 255
+      Min Intensity: 0
+      Name: Foreground Cloud (/foreground_cloud)
+      Position Transformer: XYZ
+      Selectable: false
+      Size (Pixels): 5
+      Size (m): 0.30000001192092896
+      Style: Points
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /foreground_cloud
+      Use Fixed Frame: true
+      Use rainbow: true
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: Foreground Voxel Cubes (/foreground_markers)
+      Namespaces:
+        fg_voxels: true
+      Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /foreground_markers
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: true
+        World:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_back_hawk_left:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_back_hawk_mount:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_back_hawk_right:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_left_hawk_left:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_left_hawk_mount:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_left_hawk_right:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_right_hawk_left:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_right_hawk_mount:
+          Value: true
+        World_nova_carter_ROS_chassis_link_sensors_right_hawk_right:
+          Value: true
+        back_2d_lidar:
+          Value: true
+        back_hawk:
+          Value: true
+        back_owl:
+          Value: true
+        back_stereo_camera_imu:
+          Value: true
+        base_link:
+          Value: true
+        caster_swivel_left:
+          Value: true
+        caster_swivel_right:
+          Value: true
+        caster_wheel_left:
+          Value: true
+        caster_wheel_right:
+          Value: true
+        chassis_imu:
+          Value: true
+        front_2d_lidar:
+          Value: true
+        front_3d_lidar:
+          Value: true
+        front_fisheye_camera:
+          Value: true
+        front_hawk:
+          Value: true
+        front_owl:
+          Value: true
+        front_stereo_camera_imu:
+          Value: true
+        front_stereo_camera_left_rgb:
+          Value: true
+        front_stereo_camera_right_rgb:
+          Value: true
+        imu_link:
+          Value: true
+        left:
+          Value: true
+        left_fisheye_camera:
+          Value: true
+        left_hawk:
+          Value: true
+        left_owl:
+          Value: true
+        left_stereo_camera_imu:
+          Value: true
+        left_stereo_camera_left_rgb:
+          Value: true
+        left_stereo_camera_right_rgb:
+          Value: true
+        lidar:
+          Value: true
+        mount:
+          Value: true
+        nova_carter:
+          Value: true
+        nova_carter_caster_frame_base:
+          Value: true
+        odom:
+          Value: true
+        rear_fisheye_camera:
+          Value: true
+        rear_stereo_camera_left_rgb:
+          Value: true
+        rear_stereo_camera_right_rgb:
+          Value: true
+        right:
+          Value: true
+        right_fisheye_camera:
+          Value: true
+        right_hawk:
+          Value: true
+        right_owl:
+          Value: true
+        right_stereo_camera_imu:
+          Value: true
+        right_stereo_camera_left_rgb:
+          Value: true
+        right_stereo_camera_right_rgb:
+          Value: true
+        wheel_left:
+          Value: true
+        wheel_right:
+          Value: true
+      Marker Scale: 0.5
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: true
+      Tree:
+        World:
+          odom:
+            base_link:
+              World_nova_carter_ROS_chassis_link_sensors_back_hawk_left:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_back_hawk_mount:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_back_hawk_right:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_left_hawk_left:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_left_hawk_mount:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_left_hawk_right:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_right_hawk_left:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_right_hawk_mount:
+                {}
+              World_nova_carter_ROS_chassis_link_sensors_right_hawk_right:
+                {}
+              back_2d_lidar:
+                {}
+              back_hawk:
+                {}
+              back_owl:
+                {}
+              back_stereo_camera_imu:
+                {}
+              chassis_imu:
+                {}
+              front_2d_lidar:
+                {}
+              front_3d_lidar:
+                {}
+              front_fisheye_camera:
+                {}
+              front_hawk:
+                {}
+              front_owl:
+                {}
+              front_stereo_camera_imu:
+                {}
+              front_stereo_camera_left_rgb:
+                {}
+              front_stereo_camera_right_rgb:
+                {}
+              imu_link:
+                {}
+              left:
+                {}
+              left_fisheye_camera:
+                {}
+              left_hawk:
+                {}
+              left_owl:
+                {}
+              left_stereo_camera_imu:
+                {}
+              left_stereo_camera_left_rgb:
+                {}
+              left_stereo_camera_right_rgb:
+                {}
+              lidar:
+                {}
+              mount:
+                {}
+              nova_carter:
+                caster_swivel_left:
+                  {}
+                caster_swivel_right:
+                  {}
+                caster_wheel_left:
+                  {}
+                caster_wheel_right:
+                  {}
+                nova_carter_caster_frame_base:
+                  {}
+                wheel_left:
+                  {}
+                wheel_right:
+                  {}
+              rear_fisheye_camera:
+                {}
+              rear_stereo_camera_left_rgb:
+                {}
+              rear_stereo_camera_right_rgb:
+                {}
+              right:
+                {}
+              right_fisheye_camera:
+                {}
+              right_hawk:
+                {}
+              right_owl:
+                {}
+              right_stereo_camera_imu:
+                {}
+              right_stereo_camera_left_rgb:
+                {}
+              right_stereo_camera_right_rgb:
+                {}
+      Update Interval: 0
+      Value: true
+  Enabled: true
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: World
+    Frame Rate: 30
+  Name: root
+  Tools:
+    - Class: rviz_default_plugins/Interact
+      Hide Inactive Objects: true
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+    - Class: rviz_default_plugins/FocusCamera
+    - Class: rviz_default_plugins/Measure
+      Line color: 128; 128; 0
+    - Class: rviz_default_plugins/SetInitialPose
+      Covariance x: 0.25
+      Covariance y: 0.25
+      Covariance yaw: 0.06853891909122467
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initialpose
+    - Class: rviz_default_plugins/PublishPoint
+      Single click: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /clicked_point
+  Transformation:
+    Current:
+      Class: rviz_default_plugins/TF
+  Value: true
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Distance: 27.01764678955078
+      Enable Stereo Rendering:
+        Stereo Eye Separation: 0.05999999865889549
+        Stereo Focal Distance: 1
+        Swap Stereo Eyes: false
+        Value: false
+      Focal Point:
+        X: -2.1685826778411865
+        Y: -4.199613094329834
+        Z: 2.3410847187042236
+      Focal Shape Fixed Size: true
+      Focal Shape Size: 0.05000000074505806
+      Invert Z Axis: false
+      Name: Current View
+      Near Clip Distance: 0.009999999776482582
+      Pitch: 0.3803987503051758
+      Target Frame: <Fixed Frame>
+      Value: Orbit (rviz)
+      Yaw: 1.310397744178772
+    Saved: ~
+Window Geometry:
+  Displays:
+    collapsed: false
+  Height: 957
+  Hide Left Dock: false
+  Hide Right Dock: false
+  QMainWindow State: 000000ff00000000fd0000000100000000000001cb00000363fc0200000004fb000000100044006900730070006c006100790073010000003d00000176000000c900fffffffb0000001200530065006c0065006300740069006f006e0000000176000000930000005c00fffffffb0000001e0054006f006f006c002000500072006f007000650072007400690065007301000001b9000000ae0000005c00fffffffb0000000a00560069006500770073010000026d00000133000000a400ffffff0000019c0000036300000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  Selection:
+    collapsed: false
+  Tool Properties:
+    collapsed: false
+  Views:
+    collapsed: false
+  Width: 877
+  X: 1683
+  Y: 50

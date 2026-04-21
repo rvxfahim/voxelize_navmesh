@@ -1,0 +1,48 @@
+voxelizer_node:
+  ros__parameters:
+    # -----------------------------------------------------------------------
+    # Topic wiring — restart required to change
+    # -----------------------------------------------------------------------
+    global_frame_id:          World                             # frame for map points and clusters
+    # input_topic:              /hesai/pandar      # raw LiDAR scan (sensor frame)
+    input_topic:              /front_3d_lidar/lidar_points      # raw LiDAR scan (sensor frame)
+    # pose_topic:               /pcl_pose                        #
+    pose_topic:               /robotPose                        #
+    # pose_type:                PoseWithCovarianceStamped                          # Supports Odometry, PoseWithCovarianceStamped, PoseStamped
+    pose_type:                Odometry                          # Supports Odometry, PoseWithCovarianceStamped, PoseStamped
+    map_topic:                /initial_map                      # static map cloud (transient_local)
+    initial_map_file:         "/home/nafis/localization/blender.pcd"                  # optional .pcd map file to publish
+    initial_map_leaf_size:    0.0                               # downsample leaf size for the initial map (0.0 to disable)
+    output_topic:             /voxelized_cloud                  # full localized scan, voxelized
+    marker_topic:             /voxel_markers                    # CUBE_LIST for full scan
+    foreground_topic:         /foreground_cloud                 # map-subtracted dynamic voxels
+    foreground_marker_topic:  /foreground_markers               # CUBE_LIST for foreground only
+
+    # -----------------------------------------------------------------------
+    # Map subtraction — tunable live via:
+    #   ros2 param set /voxelizer_node subtraction_radius 3
+    # -----------------------------------------------------------------------
+    subtraction_radius: 1  # Chebyshev voxel radius eroded around each map voxel
+                           # 1 → 27 neighbours, 2 → 125, 3 → 343
+
+    # -----------------------------------------------------------------------
+    # Voxel filter — tunable live via:
+    #   ros2 param set /voxelizer_node leaf_size 0.3
+    # -----------------------------------------------------------------------
+    leaf_size:    0.1    # voxel downsampling edge length (0.0 to disable)
+    subtraction_leaf_size: 0.1  # map subtraction voxel grid size in metres (0.01 - 5.0)
+    min_range:    0.1    # discard points closer than this (sensor frame, metres)
+    max_range:    3.0  # discard points farther than this (sensor frame, metres)
+
+    # -----------------------------------------------------------------------
+    # Marker appearance — tunable live
+    # -----------------------------------------------------------------------
+    marker_alpha: 1.0   # cube opacity: 0.0 = transparent, 1.0 = solid
+
+    # -----------------------------------------------------------------------
+    # TF2 transform — primary path; fallback uses /robotPose + static offset
+    # -----------------------------------------------------------------------
+    tf_timeout:       0.1    # seconds to wait for TF lookup before falling back
+    lidar_x_offset:   0.0    # fallback static lidar→base_link offset X (m)
+    lidar_y_offset:   0.0    # fallback static lidar→base_link offset Y (m)
+    lidar_z_offset:   0.0    # fallback static lidar→base_link offset Z (m)
