@@ -16,6 +16,10 @@ __pycache__/
 
 # Geometry (voxel meshes, exported OBJ files)
 *.obj
+# blender.obj / blender_y.obj are hosted in GitHub Releases (>100 MB)
+!blender.mtl
+!blender_y.mtl
+!blender.tcbin
 
 # Navmesh binaries — except the small sample committed for testing
 *.bin
@@ -37,3 +41,4 @@ dist/
 # ── Logs and temporary files ─────────────────────────────────────────────────
 log/
 install/
+plans/
